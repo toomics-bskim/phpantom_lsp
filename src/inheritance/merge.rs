@@ -153,13 +153,53 @@ pub(crate) fn resolve_class_with_inheritance(
     );
 
     // 2. Walk up the `extends` chain and merge parent members.
-    merge_parent_chain(class, &mut merged, &mut dedup, class_loader);
+    let mut constructor_selected = select_legacy_constructor(&mut merged);
+    merge_parent_chain(
+        class,
+        &mut merged,
+        &mut dedup,
+        class_loader,
+        &mut constructor_selected,
+    );
 
     // 3. Enrich methods from implemented interfaces.
     enrich_from_interfaces(class, &mut merged, class_loader);
 
     retype_documented_properties(class, &mut merged);
     refine_enum_cases(&mut merged);
+    merged
+}
+
+/// Freeze constructor selection before inherited ordinary methods arrive.
+fn select_legacy_constructor(class: &mut ClassInfo) -> bool {
+    let constructor = class.constructor_arc();
+    let selected = constructor.is_some();
+    class.legacy_constructor = constructor.filter(|m| !m.name.eq_ignore_ascii_case("__construct"));
+    class.legacy_constructor_owner = class.legacy_constructor.as_ref().map(|_| {
+        class
+            .legacy_constructor_owner
+            .unwrap_or_else(|| class.fqn())
+    });
+    class.legacy_constructor_name = None;
+    selected
+}
+
+fn class_with_traits(class: &ClassInfo, loader: &ResolvedClassLoader<'_>) -> ClassInfo {
+    let mut merged = class.clone();
+    let mut dedup = MergeDedup::from_class(class);
+    traits::merge_traits_into(
+        &mut merged,
+        &class.used_traits,
+        &TraitContext {
+            use_generics: &class.use_generics,
+            precedences: &class.trait_precedences,
+            aliases: &class.trait_aliases,
+        },
+        loader,
+        0,
+        &mut dedup,
+        &declared_self_type(class, &HashMap::new()),
+    );
     merged
 }
 
@@ -170,6 +210,7 @@ fn merge_parent_chain(
     merged: &mut ClassInfo,
     dedup: &mut MergeDedup,
     class_loader: &ResolvedClassLoader<'_>,
+    constructor_selected: &mut bool,
 ) {
     // `current` holds a reference to the class whose `parent_class`,
     // `extends_generics`, `used_traits`, etc. we read at each level.
@@ -209,6 +250,30 @@ fn merge_parent_chain(
             &active_subs,
             class_loader,
         );
+        if !*constructor_selected {
+            // Select before ordinary overrides and private-member filtering.
+            // Trait aliases are declarations of the consuming parent class.
+            let parent_with_traits;
+            let constructor_parent =
+                if parent.used_traits.is_empty() || parent.get_constructor().is_some() {
+                    &*parent
+                } else {
+                    parent_with_traits = class_with_traits(&parent, class_loader);
+                    &parent_with_traits
+                };
+            if let Some(constructor) = constructor_parent.constructor_arc() {
+                *constructor_selected = true;
+                if !constructor.name.eq_ignore_ascii_case("__construct") {
+                    let transform = LevelTransform::new(&parent, &level_subs);
+                    merged.legacy_constructor = Some(transform.method(&constructor));
+                    merged.legacy_constructor_owner = Some(
+                        constructor_parent
+                            .legacy_constructor_owner
+                            .unwrap_or_else(|| parent.fqn()),
+                    );
+                }
+            }
+        }
         merge_parent_members(merged, dedup, &parent, &level_subs, class_loader);
 
         // Carry the substitution map forward for the next level.
@@ -321,6 +386,29 @@ struct LevelTransform<'a> {
 }
 
 impl<'a> LevelTransform<'a> {
+    fn method(&self, method: &Arc<crate::types::MethodInfo>) -> Arc<crate::types::MethodInfo> {
+        let needs_sub = method_references_params(method, &self.sub_keys);
+        let needs_keywords =
+            method_has_inherited_class_keyword(method, self.declaring_parent.as_deref());
+        if !needs_sub && !needs_keywords {
+            return Arc::clone(method);
+        }
+        intern_transformed_method(method, self.fingerprint(needs_sub, needs_keywords), || {
+            let mut result = (**method).clone();
+            if needs_sub {
+                apply_substitution_to_method(&mut result, self.subs);
+            }
+            if needs_keywords {
+                bind_inherited_class_keywords(
+                    &mut result,
+                    &self.self_type,
+                    self.declaring_parent.as_deref(),
+                );
+            }
+            result
+        })
+    }
+
     fn new(parent: &ClassInfo, subs: &'a HashMap<String, PhpType>) -> Self {
         let parent_fqn = parent.fqn();
         Self {
@@ -457,34 +545,7 @@ fn merge_parent_methods(
             }
             continue;
         }
-        // Bind bare `self` / `parent` in the return type and parameter
-        // hints to the declaring (parent) class and its own parent, so
-        // they resolve to the classes that the declaration meant rather
-        // than to the inheriting child and its parent.
-        let needs_keywords =
-            method_has_inherited_class_keyword(method, transform.declaring_parent.as_deref());
-        if !needs_sub && !needs_keywords {
-            // Substitution is a no-op and there is no relative keyword:
-            // keep the shared `Arc` instead of deep-cloning.
-            merged.methods.push(Arc::clone(method));
-            continue;
-        }
-        let fp = transform.fingerprint(needs_sub, needs_keywords);
-        let transformed = intern_transformed_method(method, fp, || {
-            let mut ancestor_method = (**method).clone();
-            if needs_sub {
-                apply_substitution_to_method(&mut ancestor_method, transform.subs);
-            }
-            if needs_keywords {
-                bind_inherited_class_keywords(
-                    &mut ancestor_method,
-                    &transform.self_type,
-                    transform.declaring_parent.as_deref(),
-                );
-            }
-            ancestor_method
-        });
-        merged.methods.push(transformed);
+        merged.methods.push(transform.method(method));
     }
 }
 

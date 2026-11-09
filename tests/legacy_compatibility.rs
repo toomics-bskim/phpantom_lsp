@@ -14,6 +14,244 @@ fn audit() -> Value {
     serde_json::from_str(include_str!("../docs/compatibility/php55-php56-audit.json")).unwrap()
 }
 
+const LEGACY_CONSTRUCTORS: &str = r#"<?php
+class LegacyBase {
+    public $value;
+    function legacybase(DateTime $value) { $this->value = $value; }
+}
+class LegacyInherited extends LegacyBase {}
+class LegacyOverride extends LegacyBase { function legacybase(Exception $other, $extra) {} }
+class LegacyOwn extends LegacyBase { function LegacyOwn(Exception $own) {} }
+class ModernBase { function __construct(DateTime $modern) {} }
+class LegacyOverModern extends ModernBase { function LegacyOverModern(Exception $own) {} }
+class ModernOverLegacy extends LegacyBase { function __construct(Exception $modern) {} }
+class BothConstructors { function BothConstructors(Exception $old) {} function __construct(DateTime $modern) {} }
+class OrdinaryBase { function OrdinaryChild(Exception $ordinary) {} }
+class OrdinaryChild extends OrdinaryBase {}
+trait LegacyFactory { function build(DateTime $traitValue) {} }
+class TraitConstructor { use LegacyFactory { build as TraitConstructor; } }
+class InheritedTraitConstructor extends TraitConstructor {}
+class PrivateConstructor { private function PrivateConstructor(DateTime $privateValue) {} }
+class InheritedPrivateConstructor extends PrivateConstructor {}
+class ProtectedConstructor { protected function ProtectedConstructor(DateTime $protectedValue) {} }
+class InheritedProtectedConstructor extends ProtectedConstructor {}
+"#;
+
+#[tokio::test]
+async fn legacy_constructor_selection_matches_runtime() {
+    for version in [
+        PhpVersion::new(5, 5),
+        PhpVersion::new(5, 6),
+        PhpVersion::new(7, 4),
+        PhpVersion::new(8, 0),
+    ] {
+        let (dir, backend) = project(version).await;
+        let legacy = version.major < 8;
+        let cases = [
+            ("LegacyBase", if legacy { "DateTime $value" } else { "" }),
+            (
+                "LegacyInherited",
+                if legacy { "DateTime $value" } else { "" },
+            ),
+            (
+                "LegacyOverride",
+                if legacy { "DateTime $value" } else { "" },
+            ),
+            ("LegacyOwn", if legacy { "Exception $own" } else { "" }),
+            ("ModernBase", "DateTime $modern"),
+            (
+                "LegacyOverModern",
+                if legacy {
+                    "Exception $own"
+                } else {
+                    "DateTime $modern"
+                },
+            ),
+            ("ModernOverLegacy", "Exception $modern"),
+            ("BothConstructors", "DateTime $modern"),
+            ("OrdinaryChild", ""),
+            (
+                "TraitConstructor",
+                if legacy { "DateTime $traitValue" } else { "" },
+            ),
+            (
+                "InheritedTraitConstructor",
+                if legacy { "DateTime $traitValue" } else { "" },
+            ),
+            (
+                "PrivateConstructor",
+                if legacy { "DateTime $privateValue" } else { "" },
+            ),
+            (
+                "InheritedPrivateConstructor",
+                if legacy { "DateTime $privateValue" } else { "" },
+            ),
+            (
+                "InheritedProtectedConstructor",
+                if legacy {
+                    "DateTime $protectedValue"
+                } else {
+                    ""
+                },
+            ),
+        ];
+        let mut text = LEGACY_CONSTRUCTORS.to_string();
+        for (name, _) in cases {
+            text.push_str(&format!("new {name}();\n"));
+        }
+        let uri = open(&backend, dir.path(), "constructors", &text).await;
+        let diagnostics = ready_diagnostics(&backend, &uri).await;
+        for (name, parameter) in cases {
+            let pos = common::position_after(&text, &format!("new {name}("));
+            let signature = backend
+                .signature_help(
+                    serde_json::from_value(json!({
+                        "textDocument": { "uri": uri }, "position": pos
+                    }))
+                    .unwrap(),
+                )
+                .await
+                .unwrap()
+                .unwrap();
+            let label = &signature.signatures[0].label;
+            if parameter.is_empty() {
+                assert!(label.contains("()"), "{version} {name}: {label}");
+            } else {
+                assert!(label.contains(parameter), "{version} {name}: {label}");
+            }
+            let missing = diagnostics.iter().any(|d| {
+                d.range.start.line == pos.line
+                    && d.code == Some(Code::String("argument_count_mismatch".into()))
+            });
+            assert_eq!(
+                missing,
+                !parameter.is_empty(),
+                "{version} {name}: {diagnostics:?}"
+            );
+        }
+        if version.major == 5 {
+            let exported: Vec<_> = cases.iter().map(|(name, parameter)| {
+                let source = format!("{LEGACY_CONSTRUCTORS}\n$r = new ReflectionClass('{name}'); $m = $r->getConstructor(); $params = $m ? $m->getParameters() : array(); $probe = $params ? $params[0]->getName() : '';\n");
+                runtime_case(name, &source, &json!(["string", parameter.split_once('$').map_or("", |(_, name)| name)]))
+            }).collect();
+            if let Some(output) = std::env::var_os("PHPANTOM_COMPAT_OUTPUT") {
+                std::fs::create_dir_all(&output).unwrap();
+                std::fs::write(
+                    Path::new(&output).join(format!("constructors-{version}.json")),
+                    serde_json::to_vec_pretty(
+                        &json!({"target": version.to_string(), "cases": exported}),
+                    )
+                    .unwrap(),
+                )
+                .unwrap();
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn legacy_constructors_preserve_property_types_and_namespace_boundaries() {
+    for version in [PhpVersion::new(5, 5), PhpVersion::new(5, 6)] {
+        let (dir, backend) = project(version).await;
+        let text = format!(
+            "{LEGACY_CONSTRUCTORS}\n$item = new LegacyInherited(new DateTime());\n$item->value->format('c');\nnew LegacyBase(new Exception());\n"
+        );
+        let uri = open(&backend, dir.path(), "properties", &text).await;
+        let diagnostics = ready_diagnostics(&backend, &uri).await;
+        assert_eq!(diagnostics.len(), 1, "{version}: {diagnostics:?}");
+        assert!(
+            common::message_text(&diagnostics[0].message).contains("expects"),
+            "{diagnostics:?}"
+        );
+        let pos = common::position_after(&text, "$item->value->");
+        let completion =
+            common::completion_response(&backend, &uri, pos.line, pos.character, None).await;
+        assert!(
+            serde_json::to_value(completion)
+                .unwrap()
+                .to_string()
+                .contains("format")
+        );
+        let pos = common::position_of_last(&text, "value->");
+        let definitions = common::definition_locations(
+            common::goto_definition_at(&backend, &uri, pos.line, pos.character + 1).await,
+        );
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(
+            definitions[0].range.start,
+            common::position_of(&text, "value;")
+        );
+        let pos = common::position_of(&text, "new LegacyInherited");
+        let hover = common::markup_hover_at(&backend, &uri, pos.line, pos.character + 5).await;
+        assert!(
+            hover.contains("DateTime") && hover.contains("legacybase"),
+            "{hover}"
+        );
+
+        let namespaced = "<?php\nnamespace Named;\nclass LegacyBase { function LegacyBase(\\Exception $unused) {} }\nclass Child extends \\LegacyBase {}\nnew LegacyBase();\nnew Child();\n";
+        let uri = open(&backend, dir.path(), "namespaced", namespaced).await;
+        let diagnostics = ready_diagnostics(&backend, &uri).await;
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert_eq!(diagnostics[0].range.start.line, 5, "{diagnostics:?}");
+    }
+}
+
+#[tokio::test]
+async fn legacy_constructor_arguments_bind_templates_and_reference_outputs() {
+    for version in [PhpVersion::new(5, 5), PhpVersion::new(5, 6)] {
+        let (dir, backend) = project(version).await;
+        let base = r#"<?php
+/** @template T */
+class LegacyBox {
+    /** @var T */ public $value;
+    /** @param T $value */
+    function LegacyBox($value) { $this->value = $value; }
+}
+class LegacyOutput {
+    /** @param-out DateTime $output */
+    function LegacyOutput(&$output) { $output = new DateTime(); }
+}
+class LegacyBodyOutput {
+    function LegacyBodyOutput(&$output) { $output = new DateTime(); }
+}
+class LegacyBodyOutputChild extends LegacyBodyOutput {
+    function LegacyBodyOutput(&$output) { $output = new Exception(); }
+}
+"#;
+        open(&backend, dir.path(), "legacy_base", base).await;
+        let text = r#"<?php
+namespace Consumer;
+use LegacyBox as ParentBox;
+/**
+ * @template U
+ * @extends ParentBox<U>
+ */
+class ChildBox extends ParentBox {}
+$box = new ChildBox(new \DateTime());
+$box->value->format('c');
+new \LegacyOutput($output);
+$output->format('c');
+new \LegacyBodyOutputChild($bodyOutput);
+$bodyOutput->format('c');
+"#;
+        let uri = open(&backend, dir.path(), "legacy_caller", text).await;
+        let diagnostics = ready_diagnostics(&backend, &uri).await;
+        assert!(diagnostics.is_empty(), "{version}: {diagnostics:?}");
+        for prefix in ["$box->value->", "$output->", "$bodyOutput->"] {
+            let pos = common::position_after(text, prefix);
+            let completion =
+                common::completion_response(&backend, &uri, pos.line, pos.character, None).await;
+            assert!(
+                serde_json::to_value(completion)
+                    .unwrap()
+                    .to_string()
+                    .contains("format"),
+                "{version} {prefix}"
+            );
+        }
+    }
+}
+
 fn source<'a>(audit: &'a Value, id: &str) -> &'a str {
     audit["cases"]
         .as_array()

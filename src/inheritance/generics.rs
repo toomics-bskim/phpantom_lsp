@@ -687,6 +687,20 @@ pub(crate) fn apply_generic_args(class: &ClassInfo, type_args: &[PhpType]) -> Cl
     let mut result = class.clone();
     let sub_keys: Vec<String> = subs.keys().cloned().collect();
 
+    if let Some(constructor) = &mut result.legacy_constructor {
+        let method_subs = class_scoped_template_values(&subs, constructor.template_params());
+        let keys: Vec<String> = method_subs.keys().cloned().collect();
+        if method_references_params(constructor, &keys) {
+            let fp = crate::virtual_members::TransformFingerprint::new(Some(&method_subs), None, 0);
+            *constructor =
+                crate::virtual_members::intern_transformed_method(constructor, fp, || {
+                    let mut method = (**constructor).clone();
+                    apply_substitution_to_method(&mut method, &method_subs);
+                    method
+                });
+        }
+    }
+
     // Only copy-on-write the member vectors (and the individual members)
     // that actually reference a substituted template parameter.  A
     // generic variant like `Builder<User>` shares every method that does

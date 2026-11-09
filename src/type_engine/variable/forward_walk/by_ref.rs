@@ -729,7 +729,7 @@ fn by_ref_call<'b>(
         ),
         Expression::Instantiation(new) => method_call_on(
             new.argument_list.as_ref()?,
-            "__construct",
+            None,
             &static_receiver_classes(new.class, scope, ctx),
             ctx,
         ),
@@ -748,14 +748,14 @@ fn named_method_call<'b>(
     let ClassLikeMemberSelector::Identifier(ident) = selector else {
         return None;
     };
-    method_call_on(arguments, bytes_to_str(ident.value), classes, ctx)
+    method_call_on(arguments, Some(bytes_to_str(ident.value)), classes, ctx)
 }
 
 /// `method_name` on the first of `classes` that has it, once everything the
 /// class inherits is merged in, with the arguments the call passes it.
 fn method_call_on<'b>(
     arguments: &'b ArgumentList<'b>,
-    method_name: &str,
+    method_name: Option<&str>,
     classes: &[Arc<ClassInfo>],
     ctx: &ForwardWalkCtx<'_>,
 ) -> Option<ByRefCall<'b>> {
@@ -765,11 +765,29 @@ fn method_call_on<'b>(
             ctx.file.class_loader,
             ctx.resolved_class_cache,
         );
-        let parameters = merged.get_method(method_name)?.parameters.clone();
+        let method = match method_name {
+            Some(name) => merged.get_method(name)?,
+            None => merged.get_constructor()?,
+        };
+        let parameters = method.parameters.clone();
+        let name = method.name;
+        let owner = if method_name.is_none()
+            && let Some(owner) = merged.legacy_constructor_owner
+            && owner != merged.fqn()
+        {
+            let declaration = (ctx.file.class_loader)(crate::class_lookup::Fqn::new(&owner))?;
+            crate::virtual_members::resolve_class_fully_maybe_cached(
+                &declaration,
+                ctx.file.class_loader,
+                ctx.resolved_class_cache,
+            )
+        } else {
+            merged
+        };
         Some(ByRefCall {
             arguments,
             parameters,
-            callee: OutParamCallee::Method(merged, atom(method_name)),
+            callee: OutParamCallee::Method(owner, name),
         })
     })
 }

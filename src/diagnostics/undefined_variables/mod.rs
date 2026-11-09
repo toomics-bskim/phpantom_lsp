@@ -206,9 +206,12 @@ impl Backend {
             &|name: Fqn<'_>| self.find_or_load_class(&name),
             Some(&self.resolved_class_cache),
         );
-        Some(by_ref_positions(
-            &merged.get_method(method_name)?.parameters,
-        ))
+        let method = if matches!(call_kind, ByRefCallKind::Constructor(_)) {
+            merged.get_constructor()?
+        } else {
+            merged.get_method(method_name)?
+        };
+        Some(by_ref_positions(&method.parameters))
     }
 
     /// Resolve the class a call names (`Cls::method()`, `new Cls()`,

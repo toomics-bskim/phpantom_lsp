@@ -1140,6 +1140,13 @@ impl Backend {
             }
 
             let owner = (!class.name.starts_with("__anonymous@")).then(|| class.fqn());
+            if let Some(constructor) = class.get_constructor() {
+                for member in body.members_of(MemberKind::Method) {
+                    if member.start == constructor.name_offset {
+                        member.read = true;
+                    }
+                }
+            }
             for member in &body.members {
                 if let Some(unused) = judge(member, owner.as_deref()) {
                     found.push(unused);

@@ -205,7 +205,6 @@ source syntax, runtime semantics, built-ins, and editor behavior.
 
 | # | Item | Impact | Complexity |
 | --- | --- | --- | --- |
-| LP9 | [Class-name constructors participate in call resolution](todo/legacy-php.md#lp9-class-name-constructors-participate-in-call-resolution) | High | Medium-High |
 | LP10 | [Loose comparisons narrow by the target semantics](todo/legacy-php.md#lp10-loose-comparisons-narrow-by-the-target-semantics) | High | High |
 | LP11 | [Resolve legacy dynamic variable binding](todo/legacy-php.md#lp11-resolve-legacy-dynamic-variable-binding) | Medium-High | High |
 | LP12 | [Destructuring updates append targets in runtime order](todo/legacy-php.md#lp12-destructuring-updates-append-targets-in-runtime-order) | Medium-High | High |
@@ -215,6 +214,7 @@ source syntax, runtime semantics, built-ins, and editor behavior.
 | LP16 | [Unannotated generators infer yielded values](todo/legacy-php.md#lp16-unannotated-generators-infer-yielded-values) | Medium | High |
 | LP17 | [Variadic and unpacked calls carry argument types](todo/legacy-php.md#lp17-variadic-and-unpacked-calls-carry-argument-types) | Medium-High | High |
 | LP19 | [Remaining generated edits respect the target language](todo/legacy-php.md#lp19-remaining-generated-edits-respect-the-target-language) | High | Medium-High |
+| LP20 | [Constructor access and explicit calls follow legacy rules](todo/legacy-php.md#lp20-constructor-access-and-explicit-calls-follow-legacy-rules) | High | Medium-High |
 | LP18 | [Qualify and document the support contract](todo/legacy-php.md#lp18-qualify-and-document-the-support-contract) | High | Medium |
 
 ## Type Inference

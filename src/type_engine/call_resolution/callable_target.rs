@@ -526,7 +526,7 @@ impl Backend {
 
     /// Build a [`ResolvedCallableTarget`] for a constructor call.
     ///
-    /// Loads and merges the class, then extracts `__construct` parameters.
+    /// Loads and merges the class, then extracts the effective constructor parameters.
     /// When `args_text` is provided, class-level `@template` parameters are
     /// resolved from the call-site argument types and substituted into the
     /// constructor's parameter types.
@@ -544,7 +544,7 @@ impl Backend {
     ) -> Option<ResolvedCallableTarget> {
         let ci = class_loader(Fqn::new(class_name))?;
         let merged = crate::virtual_members::resolve_class_fully_cached(&ci, class_loader, cache);
-        let ctor = match merged.get_method("__construct") {
+        let ctor = match merged.get_constructor() {
             Some(c) => c.clone(),
             // A class with no constructor (and none inherited) accepts any
             // arguments without error: PHP silently ignores them. Mark the
@@ -567,7 +567,7 @@ impl Backend {
             && !ctor.template_bindings().is_empty()
         {
             let split_args = crate::text_scan::split_top_level_commas(at);
-            let subs = Self::build_method_template_subs(&merged, "__construct", &split_args, rctx);
+            let subs = Self::build_selected_method_template_subs(&ctor, &split_args, rctx);
             if !subs.is_empty() {
                 // A bound naming sibling templates
                 // (`T of RecursiveIterator<TKey, TValue>`) is checked for

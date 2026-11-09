@@ -67,6 +67,7 @@ impl Backend {
             doc_ctx,
             &[],
             &crate::atom::AtomMap::default(),
+            None,
         );
         super::classes::add_implicit_stringable(&mut interfaces, &methods);
 
@@ -78,6 +79,9 @@ impl Backend {
         let name = atom(&format!("{ANONYMOUS_CLASS_PREFIX}{start_offset}"));
 
         ClassInfo {
+            legacy_constructor_name: None,
+            legacy_constructor: None,
+            legacy_constructor_owner: None,
             kind: ClassLikeKind::Class,
             name,
             methods: crate::types::into_arcs(methods).into(),

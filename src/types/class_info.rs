@@ -258,6 +258,17 @@ pub struct ClassInfo {
     /// The outer [`SharedVec`] makes cloning the entire `ClassInfo`
     /// O(1) (Arc refcount bump on the Vec itself).
     pub methods: SharedVec<Arc<MethodInfo>>,
+    /// Name eligible for a PHP 4 constructor in an unresolved global class.
+    /// Cleared once inheritance has selected the constructor, so inherited
+    /// ordinary methods cannot accidentally become constructors.
+    pub legacy_constructor_name: Option<Atom>,
+    /// The selected legacy constructor, independent of ordinary method
+    /// overriding. A child overriding `Parent::Parent` still constructs
+    /// through the parent's original method.
+    pub legacy_constructor: Option<Arc<MethodInfo>>,
+    /// Consuming class of the selected legacy constructor. This remains
+    /// distinct from a subclass's ordinary override of the same method.
+    pub legacy_constructor_owner: Option<Atom>,
     /// Index from lowercased method name → position in `methods`
     /// (PHP method names are case-insensitive), sorted by name for
     /// binary search.
@@ -698,6 +709,26 @@ impl ClassInfo {
             .map(|arc| arc.as_ref())
     }
 
+    /// Constructor selected by PHP's declaration and inheritance rules.
+    pub fn get_constructor(&self) -> Option<&MethodInfo> {
+        self.legacy_constructor.as_deref().or_else(|| {
+            self.get_method("__construct").or_else(|| {
+                self.legacy_constructor_name
+                    .as_deref()
+                    .and_then(|name| self.get_method(name))
+            })
+        })
+    }
+
+    /// Shared constructor metadata, preserving an inherited legacy method
+    /// even when the ordinary method table contains an override.
+    pub(crate) fn constructor_arc(&self) -> Option<Arc<MethodInfo>> {
+        self.legacy_constructor.clone().or_else(|| {
+            self.get_constructor()
+                .and_then(|method| self.get_method_arc(&method.name))
+        })
+    }
+
     /// Alias of [`get_method`](Self::get_method), kept for call sites
     /// written when the primary lookup was still case-sensitive.
     #[inline]
@@ -830,6 +861,7 @@ impl ClassInfo {
         // ── Class-level metadata ────────────────────────────────────
         if self.kind != other.kind
             || self.name != other.name
+            || self.legacy_constructor_name != other.legacy_constructor_name
             || self.file_namespace != other.file_namespace
             || self.parent_class != other.parent_class
             || self.interfaces != other.interfaces

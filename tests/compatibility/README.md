@@ -81,6 +81,20 @@ Run these with the reference-runtime checker to verify both accepted objects
 and rejected scalar arguments. PHP 5's recoverable type errors are converted
 to exceptions in the rejection probes so their outcome can be asserted.
 
+## Legacy constructors
+
+Constructor checks distinguish `new` from an ordinary method call: an override
+of a parent's class-name method does not replace that parent's constructor.
+The matrix covers inheritance, namespace boundaries, trait aliases, visibility,
+and the PHP 8 removal boundary. Cross-file tests check property types, class
+templates, and reference outputs through the shared type engine.
+Version boundaries follow the [constructor removal RFC](https://wiki.php.net/rfc/remove_php4_constructors).
+
+The reference runner accepts `constructors-5.5.json` and `constructors-5.6.json`
+exported by `PHPANTOM_COMPAT_OUTPUT`. Reflection verifies the selected parameter
+names against PHP 5.5.38 and 5.6.40. Explicit `parent::__construct()` dispatch to
+a legacy constructor remains a separate backlog item.
+
 ## Built-in availability
 
 `cargo test --test integration builtin_availability` checks introduction and

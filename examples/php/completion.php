@@ -63,6 +63,29 @@ class LegacyNativeHintDemo
     }
 }
 
+// Try: signature help on `new LegacyConstructorDemo(...)`, then complete
+// `$this->pen->` below. In a PHP 5.5/5.6 project, copy this class to the
+// global namespace and rename __construct to LegacyConstructorDemo:
+// its constructor signature and inferred property type still resolve,
+// including through a subclass with no constructor of its own.
+// A namespaced class needs __construct; PHP 8 also requires that spelling.
+class LegacyConstructorDemo
+{
+    public $pen;
+
+    public function __construct(Scaffolding\Pen $pen)
+    {
+        $this->pen = $pen;
+    }
+
+    /** @return Scaffolding\Pen */
+    public function demo()
+    {
+        $this->pen->write();
+        return $this->pen;
+    }
+}
+
 // Try: type `new DateT` and accept `DateTime`. The `use DateTime;` statement
 // is inserted at the top of the import list above to maintain alphabetical
 // order (it sorts ahead of the `Demo\Scaffolding\...` imports).

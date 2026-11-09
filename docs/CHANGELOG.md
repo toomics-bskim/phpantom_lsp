@@ -242,6 +242,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Type inference
 
+- **Legacy constructors.** Class-name constructors in PHP 5 and PHP 7 projects supply constructor signatures and argument checks, including when inherited. Completion and type inference follow the selected constructor; PHP 8 keeps these methods ordinary.
 - **Native type hints in PHP 5 projects.** With a PHP 5.5 or 5.6 target, hints such as `int` resolve as class names for completion, navigation, and argument checks. PHPDoc types and modern PHP's built-in hints keep their usual meaning.
 - **Constants passed to calls.** Namespaced and imported constants keep their values and types when used as arguments. Contributed by @shuvroroy.
 - **Constants defined from namespaced or imported constants.** A class constant or namespaced constant such as `const MAX = LIMIT;` now holds the value of the constant its own file means, whether imported with `use const`, declared in its namespace, or global, when it is read from another file. A parameter default that names a constant is read the same way when the argument is left out.

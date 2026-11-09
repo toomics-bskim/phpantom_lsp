@@ -173,6 +173,15 @@ pub(super) fn extract_class<'a>(
         .unwrap_or_default();
 
     let doc_info = extract_class_docblock(class, doc_ctx);
+    let legacy_constructor_name = (crate::parser::source_version()
+        < mago_php_version::PHPVersion::new(8, 0, 0)
+        && doc_ctx.is_none_or(|ctx| ctx.namespace.as_deref().is_none_or(str::is_empty)))
+    .then(|| atom_bytes(class.name.value));
+    let legacy_constructor_binding = legacy_constructor_name.filter(|_| {
+        !doc_info.template_params.is_empty() && !class.members.iter().any(|member| {
+            matches!(member, ClassLikeMember::Method(method) if method.name.value.eq_ignore_ascii_case(b"__construct"))
+        })
+    });
 
     let ExtractedMembers {
         methods,
@@ -187,6 +196,7 @@ pub(super) fn extract_class<'a>(
         doc_ctx,
         &doc_info.template_params,
         &doc_info.template_param_bounds,
+        legacy_constructor_binding,
     );
     add_implicit_stringable(&mut interfaces, &methods);
 
@@ -213,6 +223,7 @@ pub(super) fn extract_class<'a>(
     ClassInfo {
         kind: ClassLikeKind::Class,
         name: atom_bytes(class.name.value),
+        legacy_constructor_name,
         methods: crate::types::into_arcs(methods).into(),
         properties: crate::types::into_arcs(properties).into(),
         constants: crate::types::into_arcs(constants).into(),
@@ -298,6 +309,7 @@ pub(super) fn extract_interface<'a>(
         doc_ctx,
         &doc_info.template_params,
         &doc_info.template_param_bounds,
+        None,
     );
     add_implicit_stringable(&mut all_parents, &methods);
 
@@ -367,6 +379,7 @@ pub(super) fn extract_trait<'a>(
         doc_ctx,
         &doc_info.template_params,
         &doc_info.template_param_bounds,
+        None,
     );
 
     let keyword_offset = trait_def.r#trait.span.start.offset;
@@ -438,6 +451,7 @@ pub(super) fn extract_enum<'a>(
         doc_ctx,
         &[],
         &AtomMap::default(),
+        None,
     );
     push_enum_case_properties(enum_def, &constants, &mut properties);
 

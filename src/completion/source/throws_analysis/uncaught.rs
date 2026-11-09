@@ -563,7 +563,7 @@ impl<'ast, 'arena> ThrowSiteSink<'ast, 'arena> for Analysis<'_, '_> {
         let offset = span.start.offset;
         if let Some(class) = self.class_named(new.class, offset)
             && let Some(merged) = self.merged(&class)
-            && let Some(constructor) = merged.get_method("__construct")
+            && let Some(constructor) = merged.get_constructor()
         {
             let throws = constructor.throws().to_vec();
             self.add_declared((offset, span.end.offset), &throws);

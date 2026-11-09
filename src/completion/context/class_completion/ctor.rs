@@ -25,14 +25,25 @@ impl Backend {
         }
     }
 
-    /// Load the `__construct` parameters for a class, if available.
+    /// Load the effective constructor parameters for a class, if available.
     ///
     /// Tries `load_stub_class` (which checks `uri_classes_index` first, then
     /// in-memory stubs) to avoid disk I/O.  Returns `None` when the
     /// class cannot be found or has no constructor.
     pub(super) fn ctor_params_for(&self, class_name: &str) -> Option<SharedVec<ParameterInfo>> {
         let cls = self.load_stub_class(class_name)?;
-        let ctor = cls.get_method_ci("__construct")?;
+        if let Some(ctor) = cls.get_constructor() {
+            return Some(ctor.parameters.clone());
+        }
+        if cls.parent_class.is_none() && cls.used_traits.is_empty() {
+            return None;
+        }
+        let merged = crate::virtual_members::resolve_class_fully_cached(
+            &cls,
+            &|name| self.find_or_load_class(&name),
+            &self.resolved_class_cache,
+        );
+        let ctor = merged.get_constructor()?;
         Some(ctor.parameters.clone())
     }
 }

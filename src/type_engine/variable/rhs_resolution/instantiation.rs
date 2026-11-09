@@ -237,7 +237,7 @@ pub(crate) fn remap_inherited_ctor_subs(
         }
 
         // If the parent has the constructor, we've found our ancestor.
-        if parent.get_method("__construct").is_some() {
+        if parent.get_constructor().is_some() {
             break;
         }
 

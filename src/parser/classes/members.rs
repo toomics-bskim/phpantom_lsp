@@ -35,6 +35,7 @@ impl Backend {
         doc_ctx: Option<&DocblockCtx<'a>>,
         class_template_params: &[Atom],
         class_template_param_bounds: &AtomMap<PhpType>,
+        legacy_constructor_name: Option<Atom>,
     ) -> ExtractedMembers {
         let mut extracted = ExtractedMembers::default();
         let mut method_bodies: Vec<(usize, &MethodBody<'_>)> = Vec::new();
@@ -66,6 +67,9 @@ impl Backend {
                         class_template_params,
                         class_template_param_bounds,
                         &mut extracted.properties,
+                        legacy_constructor_name.is_some_and(|name| {
+                            method.name.value.eq_ignore_ascii_case(name.as_bytes())
+                        }),
                     ) else {
                         continue;
                     };

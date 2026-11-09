@@ -223,14 +223,14 @@ impl Backend {
             // A constructor the class inherited carries the declaring file's
             // offsets, so feeding it back through the callable lookup finds
             // nothing here and the walk moves on to the parent.
-            if let Some(constructor) = class.get_method("__construct")
+            if let Some(constructor) = class.get_constructor()
                 && constructor.name_offset != 0
                 && !constructor.is_virtual
                 && let Some((class_uri, _)) = self.find_class_file_content(&fqn, "", "")
                 && let Some((content, symbol_map)) = self.cached_file(cache, &class_uri)
                 && let Some(callable) =
                     self.php_callable_at(&class_uri, &content, &symbol_map, constructor.name_offset)
-                && callable.item.name.eq_ignore_ascii_case("__construct")
+                && callable.item.name.eq_ignore_ascii_case(&constructor.name)
             {
                 return Some(callable);
             }

@@ -25,15 +25,16 @@ pub(super) fn extract_method<'a>(
     class_template_params: &[Atom],
     class_template_param_bounds: &AtomMap<PhpType>,
     properties: &mut Vec<PropertyInfo>,
+    is_legacy_constructor: bool,
 ) -> Option<MethodInfo> {
-    let is_constructor = method.name.value == b"__construct".as_slice();
+    let is_constructor = method.name.value.eq_ignore_ascii_case(b"__construct");
     let mut signature = extract_signature(
         method,
         &method.attribute_lists,
         &method.parameter_list,
         method.return_type_hint.as_ref(),
         doc_ctx,
-        if is_constructor {
+        if is_constructor || is_legacy_constructor {
             class_template_params
         } else {
             &[]

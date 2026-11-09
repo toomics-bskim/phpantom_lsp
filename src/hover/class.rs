@@ -56,7 +56,7 @@ impl Backend {
                 class_loader(name)
             }
         };
-        // On `new ClassName`, show the __construct method hover
+        // On `new ClassName`, show the selected constructor hover
         // instead of the class hover.
         if context == crate::symbol_map::ClassRefContext::New
             && let Some(cls) = class_loader(name)
@@ -66,10 +66,13 @@ impl Backend {
                 resolved_class_loader,
                 &self.resolved_class_cache,
             );
-            if let Some(constructor) = merged.get_method_ci("__construct") {
+            if let Some(constructor) = merged.get_constructor() {
+                let owner = merged
+                    .legacy_constructor_owner
+                    .and_then(|name| resolved_class_loader(Fqn::new(&name)));
                 return Some(self.hover_for_method(
                     constructor,
-                    &merged,
+                    owner.as_deref().unwrap_or(&merged),
                     resolved_class_loader,
                     uri,
                     content,

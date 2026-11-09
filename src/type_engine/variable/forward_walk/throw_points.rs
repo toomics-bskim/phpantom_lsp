@@ -408,7 +408,7 @@ impl<'ast, 'arena> ThrowSiteSink<'ast, 'arena> for Collect<'_, '_> {
             self.points.implicit = true;
             return;
         };
-        let Some(constructor) = merged.get_method("__construct") else {
+        let Some(constructor) = merged.get_constructor() else {
             return;
         };
         // An exception's constructor only stores its arguments, which is

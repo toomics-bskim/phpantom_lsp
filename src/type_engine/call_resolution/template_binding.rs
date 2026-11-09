@@ -614,7 +614,7 @@ fn wrapper_constructor_template(
             .find(|c| crate::util::short_name(&c.name) == crate::util::short_name(wrapper_name))
             .cloned()
     })?;
-    let wrapper_ctor = wrapper_cls.get_method("__construct")?;
+    let wrapper_ctor = wrapper_cls.get_constructor()?;
     if wrapper_ctor.template_bindings().is_empty() {
         return None;
     }
@@ -692,18 +692,18 @@ fn constructor_class_subs(
 ) -> HashMap<String, PhpType> {
     // The constructor is taken from the class that declares it, unsubstituted,
     // so its bindings still name that class's templates.
-    let (ctor_owner, inherited) = if cls.get_method("__construct").is_some() {
+    let (ctor_owner, inherited) = if cls.get_constructor().is_some() {
         (None, false)
     } else {
         match crate::inheritance::ancestors(cls, ctx.file.class_loader)
-            .find(|(_, parent)| parent.get_method("__construct").is_some())
+            .find(|(_, parent)| parent.get_constructor().is_some())
         {
             Some((_, ancestor)) => (Some(ancestor), true),
             None => return HashMap::new(),
         }
     };
     let owner = ctor_owner.as_deref().unwrap_or(cls);
-    let Some(ctor) = owner.get_method("__construct") else {
+    let Some(ctor) = owner.get_constructor() else {
         return HashMap::new();
     };
     if ctor.template_bindings().is_empty() {

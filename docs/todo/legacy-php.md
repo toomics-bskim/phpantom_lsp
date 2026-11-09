@@ -96,34 +96,16 @@ hint; it is not evidence of support for the later primitive type.
 
 ## Delivery order
 
-Each numbered item is one implementation task and one PR. LP9 establishes
-legacy constructor resolution; LP10–LP17 address the remaining semantic
-and inference gaps.
+Each numbered item is one implementation task and one PR. LP10–LP17
+address the remaining semantic and inference gaps. LP20 covers constructor
+access and explicit calls.
 LP19 covers the remaining edit producers; LP18 qualifies the final support
 claim. Dependencies below are explicit;
 items can move into scheduled sprints without changing their scope.
 
 Reproduced defects should receive GitHub issues with the audit sample
-and target version attached, especially LP9. This
+and target version attached. This
 document records the work; it does not imply issues have been opened.
-
-## LP9. Class-name constructors participate in call resolution
-
-**Impact: High · Complexity: Medium-High**
-
-**Evidence.** `old_constructor_missing_arg` and `constructor_inherited`
-have empty `(): mixed` signature help and no missing-argument diagnostic.
-The `__construct` control reports its DateTime parameter and the missing
-argument. `call_resolution/callable_target.rs` selects only `__construct`.
-
-**Plan.** Select the effective constructor in the shared call/inheritance
-engine using PHP 5 namespace, inheritance, visibility, and precedence
-rules. Feed its signature and assignments into existing consumers.
-
-**Done when.** Own and inherited legacy constructors provide signatures,
-argument checks, navigation, and inferred property types. `__construct`
-wins when present; a same-name method in a namespace is not accidentally
-promoted to a constructor. Include the PHP 8 removal boundary.
 
 ## LP10. Loose comparisons narrow by the target semantics
 
@@ -286,9 +268,33 @@ Runtime checks cover edits that can change evaluation order or coercion.
 Unavailable transformations are not offered, and supported edits preserve
 their meaning. Record a reproducer for every additional failure found.
 
+## LP20. Constructor access and explicit calls follow legacy rules
+
+**Impact: High · Complexity: Medium-High**
+
+**Evidence.** PHP 5.5.38 and 5.6.40 accept a child constructor calling
+`parent::__construct(new DateTime())` when the global parent only declares
+`function ParentName(DateTime $value) {}`. PHPantom reports
+`ParentName::__construct() not found`. An explicit arrow call to
+`$object->__construct()` on that same parent really is undefined, so adding
+an ordinary method alias would be incorrect. Separately, constructing a child
+of a class with a private class-name constructor produces a runtime fatal
+error, but no access diagnostic after its arguments are satisfied.
+
+**Plan.** Use the selected constructor and its declaring owner for explicit
+scope calls and constructor visibility checks. Preserve ordinary method
+lookup for arrow calls, and share the result with signatures, navigation,
+and diagnostics. This is deferred from the constructor selection work;
+selection and argument inference alone do not establish that a call is legal.
+
+**Done when.** Valid parent/self constructor calls resolve without a false
+unknown-member diagnostic. Inaccessible construction is diagnosed with own,
+inherited, and trait constructors, with modern `__construct` and PHP 8 controls.
+Runtime fixtures distinguish explicit scope calls from ordinary arrow calls.
+
 ## LP18. Qualify and document the support contract
 
-**Impact: High · Complexity: Medium · Depends on: LP9–LP17, LP19**
+**Impact: High · Complexity: Medium · Depends on: LP10–LP17, LP19, LP20**
 
 **Plan.** Expand the regression matrix to remaining language and LSP
 surfaces before claiming full support: include/require and manual

@@ -215,6 +215,15 @@ name until declaration-site qualification and displays as `\int` when a
 global class would otherwise be ambiguous. Ordinary class names retain
 `Named`; class-producing paths must use `class_named` rather than `named`.
 
+Class construction uses `ClassInfo::get_constructor`. Parsing records whether
+a global class is eligible for a class-name constructor; inheritance selects
+that method before merging ordinary overrides. A selected legacy constructor
+retains its shared method and declaring owner independently of the method table:
+overriding a parent's same-name method does not change what `new` invokes.
+Constructor consumers must not substitute a lookup of `__construct` or of the
+selected method's name. PHP 8 source and modern stub grammar do not enable
+legacy constructor recognition.
+
 Types are hash-consed: every constructor routes through the interner in
 `php_type/intern.rs`, so two structurally equal types always share one
 allocation. That is what lets a type occurrence cost 8 bytes rather

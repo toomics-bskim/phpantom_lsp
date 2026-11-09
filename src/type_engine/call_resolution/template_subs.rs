@@ -67,7 +67,21 @@ impl Backend {
             _ => return HashMap::new(),
         };
 
-        let callee = super::TemplateCallee::of_method(&method);
+        Self::build_selected_method_template_subs(&method, arg_texts, ctx)
+    }
+
+    /// Bind the selected callable without looking it up again by name.
+    /// An inherited legacy constructor can differ from the ordinary override.
+    pub(crate) fn build_selected_method_template_subs(
+        method: &MethodInfo,
+        arg_texts: &[&str],
+        ctx: &ResolutionCtx<'_>,
+    ) -> HashMap<String, PhpType> {
+        if method.template_params().is_empty() {
+            return HashMap::new();
+        }
+
+        let callee = super::TemplateCallee::of_method(method);
         let mut subs = super::bind_template_args(&callee, arg_texts, None, ctx);
 
         finish_template_subs(
@@ -79,7 +93,7 @@ impl Backend {
             ctx,
         );
         crate::virtual_members::laravel::patches::narrow_conditionable_value_binding(
-            &method, &mut subs,
+            method, &mut subs,
         );
 
         subs
