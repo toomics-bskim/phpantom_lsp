@@ -22,6 +22,7 @@ pub(crate) mod halt_compiler;
 pub(crate) mod identifier;
 pub(crate) mod inline;
 pub(crate) mod instantiation;
+mod legacy_indirection;
 pub(crate) mod literal;
 pub(crate) mod r#loop;
 pub(crate) mod magic_constant;

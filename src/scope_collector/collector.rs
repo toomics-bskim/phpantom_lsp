@@ -27,6 +27,8 @@ pub(super) struct Collector<'a> {
     /// Optional callback that resolves by-reference parameter positions
     /// for function/static-method/constructor calls.
     by_ref_resolver: Option<ByRefResolver<'a>>,
+    /// Resolves the local slots read by indirect variables when a type engine is available.
+    pub(super) indirect_read_resolver: Option<IndirectReadResolver<'a>>,
     /// Name of the enclosing class (when walking a method body).
     /// Used to resolve `$this->method()` by-ref parameters.
     pub(super) enclosing_class_name: Option<String>,
@@ -43,6 +45,7 @@ impl<'a> Collector<'a> {
             dynamic_scope_accesses: Vec::new(),
             scope_stack: Vec::new(),
             by_ref_resolver: None,
+            indirect_read_resolver: None,
             enclosing_class_name: None,
         }
     }
@@ -770,6 +773,13 @@ fn direct_variable(expr: &Expression<'_>) -> Option<(String, u32)> {
 
 /// Walk a variable in read position.
 fn walk_variable_read(var: &Variable<'_>, collector: &mut Collector<'_>) {
+    if !matches!(var, Variable::Direct(_))
+        && let Some(resolve) = collector.indirect_read_resolver
+    {
+        for name in resolve(var) {
+            collector.push_access(name, var.span().start.offset, AccessKind::Read);
+        }
+    }
     match var {
         Variable::Direct(dv) => {
             let name = bytes_to_str(dv.name).to_string();

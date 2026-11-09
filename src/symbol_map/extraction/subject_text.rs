@@ -27,6 +27,15 @@ pub(super) fn expr_to_subject_text(expr: &Expression<'_>) -> String {
 /// The [`SubjectText`] of a member access whose subject is `expr`.
 pub(super) fn subject_text_of(expr: &Expression<'_>, content: &str) -> SubjectText {
     let span = expr.span();
+    if content
+        .get(span.start.offset as usize..span.end.offset as usize)
+        .is_some_and(crate::type_engine::subject_expr::has_indirect_name)
+    {
+        return SubjectText::Range {
+            start: span.start.offset,
+            end: span.end.offset,
+        };
+    }
     SubjectText::new(
         expr_to_subject_text(expr),
         span.start.offset,
@@ -206,6 +215,21 @@ fn render_spine(
     content: &str,
     mut mark: impl FnMut((u32, u32), Option<(u32, bool)>),
 ) -> Option<String> {
+    let span = expr.span();
+    if let Some(raw) = content.get(span.start.offset as usize..span.end.offset as usize)
+        && crate::type_engine::subject_expr::has_indirect_name(raw)
+    {
+        let mut current = expr;
+        loop {
+            let (start, end) = span_key(current);
+            mark((start, end), Some((end - start, true)));
+            let Some(receiver) = spine_receiver(current) else {
+                break;
+            };
+            current = receiver;
+        }
+        return Some(raw.to_owned());
+    }
     let mut links: Vec<(SpineLink<'_>, u32)> = Vec::new();
     let mut current = expr;
     loop {

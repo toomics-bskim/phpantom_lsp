@@ -11,6 +11,7 @@
 //! Severity: `Hint` with `DiagnosticTag::Unnecessary` so editors
 //! render unused variables as dimmed/faded text.
 
+use mago_span::HasSpan;
 use std::collections::{HashMap, HashSet};
 
 use mago_syntax::cst::*;
@@ -25,8 +26,7 @@ use crate::diagnostics::undefined_variables::{
 };
 use crate::parser::with_parsed_program;
 use crate::scope_collector::{
-    AccessKind, FrameKind, ScopeBody, ScopeMap, collect_function_scope_with_kind,
-    collect_function_scope_with_resolver,
+    AccessKind, FrameKind, ScopeBody, ScopeMap, collect_function_scope_with_indirect_reads,
 };
 use crate::types::PhpVersion;
 
@@ -46,6 +46,9 @@ impl Backend {
         }
 
         let php_version = self.php_version();
+        let file =
+            (content.contains("$$") || content.contains("${")).then(|| self.file_context(uri));
+        let loaders = file.as_ref().map(|file| self.file_loaders(file));
 
         with_parsed_program(content, "unused_variable", |program, content| {
             let mut ctx = DiagnosticCtx {
@@ -53,6 +56,7 @@ impl Backend {
                 uri,
                 content,
                 php_version,
+                loaders: loaders.as_ref(),
                 diagnostics: Vec::new(),
             };
 
@@ -73,7 +77,22 @@ struct DiagnosticCtx<'a> {
     uri: &'a str,
     content: &'a str,
     php_version: PhpVersion,
+    loaders: Option<&'a crate::resolution::FileLoaders<'a>>,
     diagnostics: Vec<Diagnostic>,
+}
+
+impl DiagnosticCtx<'_> {
+    fn indirect_reads(&self, variable: &Variable<'_>) -> Vec<String> {
+        let Some(loaders) = self.loaders else {
+            return Vec::new();
+        };
+        let var_ctx = loaders.var_ctx_at(self.content, variable.span().start.offset);
+        crate::type_engine::variable::rhs_resolution::resolve_variable_names(variable, &var_ctx)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|name| format!("${name}"))
+            .collect()
+    }
 }
 
 // ─── AST walking ────────────────────────────────────────────────────────────
@@ -97,12 +116,13 @@ impl<'ast, 'arena, 'a> mago_syntax::walker::Walker<'ast, 'arena, DiagnosticCtx<'
         let compact_vars = collect_compact_vars(body);
         let has_get_defined = has_get_defined_vars(body);
         let imports = collect_import_offsets(body);
-        let scope = collect_function_scope_with_resolver(
+        let scope = collect_function_scope_with_indirect_reads(
             &func.parameter_list,
             func.body.statements.as_slice(),
             body_start,
             body_end,
-            None,
+            FrameKind::Function,
+            &|variable| ctx.indirect_reads(variable),
         );
         check_scope(&scope, ctx, None, &compact_vars, has_get_defined, &imports);
     }
@@ -121,12 +141,13 @@ impl<'ast, 'arena, 'a> mago_syntax::walker::Walker<'ast, 'arena, DiagnosticCtx<'
         let compact_vars = collect_compact_vars(body);
         let has_get_defined = has_get_defined_vars(body);
         let imports = collect_import_offsets(body);
-        let scope = collect_function_scope_with_kind(
+        let scope = collect_function_scope_with_indirect_reads(
             &method.parameter_list,
             block.statements.as_slice(),
             body_start,
             body_end,
             FrameKind::Method,
+            &|variable| ctx.indirect_reads(variable),
         );
 
         check_scope(

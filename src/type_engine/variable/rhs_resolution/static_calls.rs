@@ -18,7 +18,7 @@ use crate::type_engine::variable::raw_type_inference::extract_arg_texts_from_ast
 use crate::type_engine::variable::resolution::build_var_resolver_from_ctx;
 
 use super::laravel_calls::{try_resolve_config_method_type, try_resolve_trans_method_type};
-use super::method_calls::{resolve_member_call_on_receiver, selected_member_name};
+use super::method_calls::resolve_member_call_on_receiver;
 use super::owner_method_call::resolve_owner_method_call;
 use super::{resolve_rhs_expression, resolve_var_types};
 
@@ -48,13 +48,22 @@ pub(super) fn resolve_rhs_static_call(
     static_call: StaticCallParts<'_>,
     ctx: &VarResolutionCtx<'_>,
 ) -> Vec<ResolvedType> {
-    // `Cls::{$expr}()`, or `Cls::$name()` with a `$name` that holds no
-    // one known string — see `runtime_named_member_type`.
-    let Some(method_name) = selected_member_name(static_call.method, ctx) else {
+    if let ClassLikeMemberSelector::Identifier(ident) = static_call.method {
+        return resolve_named_static_call(&static_call, bytes_to_str(ident.value), ctx);
+    }
+    let Some(names) = super::dynamic_names::member_names(static_call.method, ctx) else {
         return super::runtime_named_member_type();
     };
-    let method_name = method_name.as_str();
+    super::dynamic_names::resolve_candidates(&names, |name| {
+        resolve_named_static_call(&static_call, name, ctx)
+    })
+}
 
+fn resolve_named_static_call(
+    static_call: &StaticCallParts<'_>,
+    method_name: &str,
+    ctx: &VarResolutionCtx<'_>,
+) -> Vec<ResolvedType> {
     // Inside a closure a `@param-closure-this` call binds, `self::` and
     // `static::` name the bound classes rather than the lexical one.
     if matches!(
@@ -70,8 +79,8 @@ pub(super) fn resolve_rhs_static_call(
             [] => {}
             // The call is made from the bound class, so late static binding
             // and `@extends` arguments come from it, not the lexical class.
-            [only] => return static_call_on_class(only, only, method_name, &static_call, ctx),
-            _ => return static_call_on_class_strings(&targets, method_name, &static_call, ctx),
+            [only] => return static_call_on_class(only, only, method_name, static_call, ctx),
+            _ => return static_call_on_class_strings(&targets, method_name, static_call, ctx),
         }
     }
 
@@ -103,11 +112,11 @@ pub(super) fn resolve_rhs_static_call(
                 &resolved, ctx,
             );
             return match targets.as_slice() {
-                [] => static_call_on_object(&static_call, resolved, ctx),
+                [] => static_call_on_object(static_call, resolved, ctx),
                 [only] => {
-                    static_call_on_class(only, ctx.current_class, method_name, &static_call, ctx)
+                    static_call_on_class(only, ctx.current_class, method_name, static_call, ctx)
                 }
-                _ => static_call_on_class_strings(&targets, method_name, &static_call, ctx),
+                _ => static_call_on_class_strings(&targets, method_name, static_call, ctx),
             };
         }
     };
@@ -119,7 +128,7 @@ pub(super) fn resolve_rhs_static_call(
     }) else {
         return vec![];
     };
-    static_call_on_class(&owner, ctx.current_class, method_name, &static_call, ctx)
+    static_call_on_class(&owner, ctx.current_class, method_name, static_call, ctx)
 }
 
 /// `ClassName::method()` once the class the call names is known.

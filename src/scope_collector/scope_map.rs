@@ -8,6 +8,10 @@
 
 // ─── By-reference parameter resolution ──────────────────────────────────────
 
+/// Local slots read through a dynamic variable, resolved by the shared type engine.
+pub(crate) type IndirectReadResolver<'a> =
+    &'a dyn Fn(&mago_syntax::cst::Variable<'_>) -> Vec<String>;
+
 /// Describes a call expression so the by-ref resolver can look up
 /// the callee's parameter list.
 pub(crate) enum ByRefCallKind<'a> {

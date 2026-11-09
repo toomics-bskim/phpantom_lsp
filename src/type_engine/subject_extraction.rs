@@ -99,7 +99,7 @@ fn skip_balanced_brackets_back(chars: &[char], pos: usize) -> Option<usize> {
 }
 
 fn is_offset_closer(c: char) -> bool {
-    c == ']' || (c == '}' && crate::parser::source_version() < mago_php_version::PHPVersion::PHP80)
+    c == ']' || c == '}'
 }
 
 /// Check if the `new` keyword (followed by whitespace) appears immediately
@@ -316,6 +316,10 @@ fn extract_arrow_subject(chars: &[char], arrow_pos: usize) -> String {
     // (past any `?` and whitespace).
     end = i;
 
+    if let Some(subject) = extract_indirect_subject(chars, end) {
+        return subject;
+    }
+
     // ── Array access: detect `]` ──
     // e.g. `$admins[0]->`, `$admins[$key]->`, `$config['key']->`
     // Also handles chained access: `$response['items'][0]->`
@@ -516,6 +520,13 @@ fn extract_call_subject(chars: &[char], paren_end: usize) -> Option<String> {
     let args_text: String = chars[open + 1..paren_end - 1].iter().collect();
     let args_text = args_text.trim();
 
+    if open > 0 && is_offset_closer(chars[open - 1]) {
+        let callee = extract_arrow_subject(chars, open);
+        if !callee.is_empty() {
+            return Some(format!("({callee})({args_text})"));
+        }
+    }
+
     // Read the function / method name before `(`
     let mut i = open;
     while i > 0 && (chars[i - 1].is_alphanumeric() || chars[i - 1] == '_' || chars[i - 1] == '\\') {
@@ -708,6 +719,43 @@ fn extract_simple_variable(chars: &[char], end: usize) -> String {
         // no `$` — return whatever we collected (may be empty)
         chars[i..var_end].iter().collect()
     }
+}
+
+/// Keep the original spelling of indirect subjects: replacing a computed
+/// offset with `[]` would discard the name and its target-version binding.
+fn extract_indirect_subject(chars: &[char], end: usize) -> Option<String> {
+    if !chars[..end]
+        .windows(2)
+        .any(|pair| pair == ['$', '$'] || pair == ['$', '{'])
+        && !chars[..end].windows(3).any(|part| {
+            part == ['-', '>', '$']
+                || part == ['-', '>', '{']
+                || part == [':', ':', '$']
+                || part == [':', ':', '{']
+        })
+    {
+        return None;
+    }
+    let mut start = end;
+    while start > 0 {
+        let ch = chars[start - 1];
+        if ch == ')' {
+            start = skip_balanced_parens_back(chars, start)?;
+        } else if matches!(ch, ']' | '}') {
+            start = skip_balanced_brackets_back(chars, start)?;
+        } else if ch.is_alphanumeric() || matches!(ch, '_' | '$' | '\\') {
+            start -= 1;
+        } else if start >= 2 && matches!(&chars[start - 2..start], ['-', '>'] | [':', ':']) {
+            start -= 2;
+            if start > 0 && chars[start - 1] == '?' {
+                start -= 1;
+            }
+        } else {
+            break;
+        }
+    }
+    let text: String = chars[start..end].iter().collect();
+    crate::type_engine::subject_expr::has_indirect_name(&text).then_some(text)
 }
 
 /// Extract the identifier/keyword before `::`.

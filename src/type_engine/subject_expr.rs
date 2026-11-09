@@ -39,6 +39,8 @@ pub enum SubjectExpr {
     Parent,
     /// A bare `$variable` (no chain, no brackets).
     Variable(String),
+    /// An indirect name whose binding must be read from the target-version CST.
+    Indirect(String),
     /// A property chain: `base->property` or `base?->property`.
     ///
     /// The `base` is itself a `SubjectExpr` (e.g. `$this`, `$var`,
@@ -232,6 +234,9 @@ impl SubjectExpr {
         let subject = subject.trim();
         if subject.is_empty() {
             return SubjectExpr::ClassName(String::new());
+        }
+        if has_indirect_name(subject) {
+            return SubjectExpr::Indirect(subject.to_owned());
         }
 
         // ── Keywords ────────────────────────────────────────────────
@@ -427,7 +432,7 @@ impl SubjectExpr {
                 SubjectExpr::SelfKw => out.push_str("self"),
                 SubjectExpr::StaticKw => out.push_str("static"),
                 SubjectExpr::Parent => out.push_str("parent"),
-                SubjectExpr::Variable(v) => out.push_str(v),
+                SubjectExpr::Variable(v) | SubjectExpr::Indirect(v) => out.push_str(v),
                 SubjectExpr::PropertyChain { base, property } => {
                     stack.push(Step::Text(property));
                     stack.push(Step::Text("->"));
@@ -647,7 +652,7 @@ impl SubjectExpr {
                     }
                     break;
                 }
-                SubjectExpr::Closure(text) => {
+                SubjectExpr::Closure(text) | SubjectExpr::Indirect(text) => {
                     collect_text_local_variables(text, out);
                     break;
                 }
@@ -718,6 +723,7 @@ fn detach_child(node: &mut SubjectExpr, pending: &mut Vec<SubjectExpr>) {
         | SubjectExpr::StaticKw
         | SubjectExpr::Parent
         | SubjectExpr::Variable(_)
+        | SubjectExpr::Indirect(_)
         | SubjectExpr::StaticMethodCall { .. }
         | SubjectExpr::StaticAccess { .. }
         | SubjectExpr::NewExpr { .. }
@@ -730,6 +736,29 @@ fn detach_child(node: &mut SubjectExpr, pending: &mut Vec<SubjectExpr>) {
 }
 
 // ─── SubjectExpr parsing helpers ────────────────────────────────────────────
+
+/// Whether a subject needs the CST to preserve indirect-name binding.
+pub(crate) fn has_indirect_name(text: &str) -> bool {
+    if !text.contains('$') && !text.contains("->{") && !text.contains("::{") {
+        return false;
+    }
+    let bytes = text.as_bytes();
+    CodeOffsets::new(bytes).any(|i| {
+        if !matches!(bytes[i], b'$' | b'-' | b':') {
+            return false;
+        }
+        let rest = &text[i..];
+        rest.starts_with("$$")
+            || rest.starts_with("${")
+            || rest
+                .strip_prefix("->")
+                .is_some_and(|tail| tail.trim_start().starts_with(['$', '{']))
+            || rest.strip_prefix("::").is_some_and(|tail| {
+                tail.trim_start().starts_with('{')
+                    || (tail.trim_start().starts_with('$') && tail.contains('('))
+            })
+    })
+}
 
 /// Split a DQL association path, `base.association`, at its last `.`: the
 /// association is a name, and the base ends the way a subject does.  A PHP

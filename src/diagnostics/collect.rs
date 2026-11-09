@@ -362,8 +362,8 @@ impl Backend {
 
     /// Collect Phase 1 (fast) diagnostics: syntax errors, unused
     /// imports/variables, namespace/class-name mismatches, and
-    /// docblock/native type-hint contradictions.  These are cheap — no type
-    /// resolution.
+    /// docblock/native type-hint contradictions. Known indirect variable
+    /// reads consult the shared scope; ordinary accesses need no type resolution.
     pub fn collect_fast_diagnostics(
         &self,
         uri_str: &str,

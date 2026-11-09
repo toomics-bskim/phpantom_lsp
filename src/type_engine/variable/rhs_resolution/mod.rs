@@ -74,6 +74,8 @@ mod calls;
 mod constant_access;
 mod doctrine_calls;
 mod drupal_calls;
+pub(in crate::type_engine) mod dynamic_names;
+pub(crate) use dynamic_names::variable_names as resolve_variable_names;
 mod function_calls;
 mod instantiation;
 mod key_path_calls;
@@ -463,6 +465,7 @@ fn resolve_rhs_expression_inner<'b>(
             }
             resolve_var_types(&rhs_var, ctx, ctx.cursor_offset)
         }
+        Expression::Variable(variable) => dynamic_names::variable_value(variable, ctx),
         // ── Concatenation: `"prefix" . $var` → string ───────────────
         // Two operands that each hold one known scalar concatenate to the
         // literal PHP would build (`'1' . 'a'` is `'1a'`). Otherwise a

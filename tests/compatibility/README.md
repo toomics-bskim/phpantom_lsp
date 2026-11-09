@@ -38,6 +38,17 @@ With an `8.5` target the same expression returns string `"103"`, which formattin
 must also preserve. The patched dependency sources and their provenance are
 documented in [`third_party/mago`](../../third_party/mago/README.md).
 
+## Indirect names
+
+[`indirection.json`](indirection.json) uses the declarations in
+[`indirection.php`](indirection.php) to distinguish PHP 5 binding from PHP 7/8.
+The suite checks inferred values, direct receiver completion and diagnostics,
+and formatting idempotence. The `indirection-5.5.json` and `indirection-5.6.json`
+exports execute both the original and formatted sources with LF and CRLF.
+Unknown names remain conservative; reads consider at most 16 distinct literal
+names and 32 levels of indirection. Writes through dynamic names, side effects
+inside selectors and indirect `global` imports remain tracked in the backlog.
+
 ## Loose comparisons
 
 [`comparisons.json`](comparisons.json) records equality outcomes for PHP 5,

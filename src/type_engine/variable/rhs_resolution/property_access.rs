@@ -44,7 +44,14 @@ pub(super) fn resolve_rhs_property_access(
                 let name = bytes_to_str(dv.name);
                 static_property_type(spa, name.strip_prefix('$').unwrap_or(name), ctx)
             }
-            _ => super::runtime_named_member_type(),
+            variable => {
+                let Some(names) = super::dynamic_names::variable_names(variable, ctx) else {
+                    return super::runtime_named_member_type();
+                };
+                super::dynamic_names::resolve_candidates(&names, |name| {
+                    static_property_type(spa, name, ctx)
+                })
+            }
         },
         Access::Property(PropertyAccess {
             object, property, ..
@@ -56,7 +63,15 @@ pub(super) fn resolve_rhs_property_access(
                 let nullsafe = matches!(access, Access::NullSafeProperty(_));
                 instance_property_type(object, bytes_to_str(ident.value), nullsafe, ctx)
             }
-            _ => super::runtime_named_member_type(),
+            selector => {
+                let Some(names) = super::dynamic_names::member_names(selector, ctx) else {
+                    return super::runtime_named_member_type();
+                };
+                let nullsafe = matches!(access, Access::NullSafeProperty(_));
+                super::dynamic_names::resolve_candidates(&names, |name| {
+                    instance_property_type(object, name, nullsafe, ctx)
+                })
+            }
         },
     }
 }

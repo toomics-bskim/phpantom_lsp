@@ -578,12 +578,22 @@ fn chain_written_as_rendered_slices_the_source() {
 }
 
 #[test]
-fn chain_links_past_a_dynamic_property_have_no_subject() {
+fn chain_links_past_a_dynamic_property_preserve_the_source() {
     let php = "<?php\n$a->b()->{$p . 'x'}->c()->d();\n";
     let map = parse_and_extract(php);
     let source = mapped(&map, php);
-    assert_eq!(member_subjects(&map, "c")[0].as_str(source), "");
-    assert_eq!(member_subjects(&map, "d")[0].as_str(source), "");
+    assert_eq!(
+        member_subjects(&map, "c")[0].as_str(source),
+        "$a->b()->{$p . 'x'}"
+    );
+    assert_eq!(
+        member_subjects(&map, "d")[0].as_str(source),
+        "$a->b()->{$p . 'x'}->c()"
+    );
+    assert!(matches!(
+        member_subjects(&map, "d")[0],
+        SubjectText::Range { .. }
+    ));
 }
 
 #[test]

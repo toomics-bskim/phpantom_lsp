@@ -38,6 +38,7 @@
 mod array_access_subject;
 mod chain_keys;
 mod context;
+mod indirect_subject;
 mod subject_outcome;
 mod variable_subjects;
 mod written_names;
@@ -219,6 +220,7 @@ fn resolve_target_classes_expr_inner(
     let class_loader = ctx.file.class_loader;
 
     match expr {
+        SubjectExpr::Indirect(text) => indirect_subject::resolve(text, access_kind, ctx),
         // ── Keywords that always mean "current class" ────────────
         SubjectExpr::This => resolve_this_subject(ctx),
         SubjectExpr::SelfKw | SubjectExpr::StaticKw => resolve_self_static_types(ctx),

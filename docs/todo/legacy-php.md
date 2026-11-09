@@ -96,7 +96,7 @@ hint; it is not evidence of support for the later primitive type.
 
 ## Delivery order
 
-Each numbered item is one implementation task and one PR. LP11–LP17
+Each numbered item is one implementation task and one PR. LP12–LP17
 address the remaining semantic and inference gaps. LP20 covers constructor
 access and explicit calls.
 LP19 covers the remaining edit producers; LP18 qualifies the final support
@@ -106,23 +106,6 @@ items can move into scheduled sprints without changing their scope.
 Reproduced defects should receive GitHub issues with the audit sample
 and target version attached. This
 document records the work; it does not imply issues have been opened.
-
-## LP11. Resolve legacy dynamic variable binding
-
-**Impact: Medium-High · Complexity: High**
-
-**Evidence.** `indirect_variable` evaluates `$$names['key']` to an
-`AuditIndirect` object, but hover is `mixed` and member completion is
-empty. The explicitly braced control also loses the type, so changing
-operator binding alone will not resolve the entire failure.
-
-**Plan.** Resolve statically known variable names through the existing
-forward walker, then apply the target's indirect-variable binding.
-Keep genuinely unknown dynamic names conservative and bounded.
-
-**Done when.** Implicit and explicit binding cases agree with the target
-runtime, including property/static-member variants and PHP 7 controls.
-Completion and diagnostics consume the same resolved value.
 
 ## LP12. Destructuring updates append targets in runtime order
 
@@ -276,9 +259,34 @@ unknown-member diagnostic. Inaccessible construction is diagnosed with own,
 inherited, and trait constructors, with modern `__construct` and PHP 8 controls.
 Runtime fixtures distinguish explicit scope calls from ordinary arrow calls.
 
+## LP21. Dynamic names preserve writes and scope effects
+
+**Impact: Medium-High · Complexity: High**
+
+**Evidence.** PHP 5.5.38 and 5.6.40 create a `DateTime` through
+`$name = 'value'; $$name = new DateTime();`. The walker currently records
+only direct variable assignment targets. `${$name = 'value'}` also evaluates
+the assignment while reading the selected variable, but selector expressions
+are not walked for their scope effects. `global $$names->key` is valid PHP 5
+syntax that the parser's variable-only global list does not accept.
+
+**Plan.** Extend the existing assignment and expression walkers to resolve
+known dynamic write targets, preserve read-time selector values across later
+writes, and model indirect global imports. Lower PHP 5 global binding to
+explicit selectors while retaining PHP 7 rejection of the implicit form.
+Keep unknown targets conservative without dropping possible mutations.
+This is the remaining mutation and scope work from indirect-name support;
+read-only names do not establish correctness when selectors change scope.
+
+**Done when.** Assignment, compound assignment, increments and reference
+writes update the same scope that completion and diagnostics read. Runtime
+fixtures cover selectors with side effects, call arguments that change a
+selector, dynamic global imports, and PHP 7/8 controls. Formatting preserves
+these effects, and unknown targets cannot retain stale narrowings.
+
 ## LP18. Qualify and document the support contract
 
-**Impact: High · Complexity: Medium · Depends on: LP11–LP17, LP19, LP20**
+**Impact: High · Complexity: Medium · Depends on: LP12–LP17, LP19–LP21**
 
 **Plan.** Expand the regression matrix to remaining language and LSP
 surfaces before claiming full support: include/require and manual

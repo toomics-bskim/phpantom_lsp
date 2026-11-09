@@ -39,6 +39,10 @@ are preserved in [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE)
 - Array and generator keys retain legacy calls named `fn` before their
   `=>` separator. Class-member parsing recognizes contextual readonly
   modifiers while preserving older class-like type names.
+- `syntax/src/parser/internal/legacy_indirection.rs`: lower PHP 5 indirect
+  offsets and calls to existing expression selectors. Implicit braces have
+  zero-width spans; an implicit `${...}` opener spans only its original `$`.
+  Formatting writes explicit braces, preserving the original access order.
 - `formatter/src/lib.rs`: use the formatter's target for parsing, including
   when callers supply custom parser settings. Range formatting shares it.
 - `formatter/src/internal/parens.rs`: use the same precedence when deciding
@@ -53,7 +57,8 @@ capability diagnostics consume the same CST. Older runtime semantics remain
 separate work. There is no extra parsing pass or post-format text replacement.
 
 Regression coverage lives in `tests/legacy_compatibility.rs`,
-`tests/compatibility/formatting.json`, and `tests/compatibility/syntax.json`; see the
+`tests/compatibility/formatting.json`, `tests/compatibility/indirection.json`,
+and `tests/compatibility/syntax.json`; see the
 [runtime check instructions](../../tests/compatibility/README.md).
 When upgrading Mago, compare these files with the new upstream source,
 retain the patch until upstream provides equivalent behavior, and run the

@@ -354,6 +354,16 @@ fn index_segment(
     // names no offset reads nothing: the read throws, so a string member
     // of a union adds nothing to what the others hold.
     if base.is_string_subtype() {
+        if let ArrayBracketSegment::IntKey(key) | ArrayBracketSegment::StringKey(key) = seg
+            && let Ok(index) = key.parse::<usize>()
+            && let Some(text) = base.as_literal().and_then(LiteralValue::string_content)
+            && let Some(byte) = text.as_bytes().get(index)
+            && byte.is_ascii()
+        {
+            // PHP offsets address bytes. A non-ASCII byte may not itself
+            // be valid UTF-8, so it cannot be represented by a literal type.
+            return Some(PhpType::literal_string_value(char::from(*byte).to_string()));
+        }
         if let ArrayBracketSegment::StringKey(key) = seg
             && !crate::php_type::may_read_string_offset(key)
         {

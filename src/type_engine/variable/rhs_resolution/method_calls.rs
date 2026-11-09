@@ -134,9 +134,40 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
     is_static: bool,
     ctx: &VarResolutionCtx<'_>,
 ) -> Vec<ResolvedType> {
-    let Some(method_name) = selected_member_name(method, ctx) else {
+    if let ClassLikeMemberSelector::Identifier(ident) = method {
+        return resolve_named_member_call(
+            object,
+            bytes_to_str(ident.value),
+            argument_list,
+            receiver,
+            is_static,
+            ctx,
+        );
+    }
+    let Some(names) = super::dynamic_names::member_names(method, ctx) else {
         return super::runtime_named_member_type();
     };
+    let receiver = receiver.unwrap_or_else(|| resolve_method_receiver(object, ctx));
+    super::dynamic_names::resolve_candidates(&names, |name| {
+        resolve_named_member_call(
+            object,
+            name,
+            argument_list,
+            Some(receiver.clone()),
+            is_static,
+            ctx,
+        )
+    })
+}
+
+fn resolve_named_member_call<'b>(
+    object: &'b Expression<'b>,
+    method_name: &str,
+    argument_list: Option<&'b ArgumentList<'b>>,
+    receiver: Option<MethodReceiver>,
+    is_static: bool,
+    ctx: &VarResolutionCtx<'_>,
+) -> Vec<ResolvedType> {
     if method_name.eq_ignore_ascii_case("call")
         && let Some(argument_list) = argument_list
         && let Some(returned) = closure_call_return(object, argument_list, ctx)
@@ -169,7 +200,7 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
 
     // `->__invoke()` / `->call()` on a closure signature returns what the
     // signature says, which the `Closure` class it resolves on cannot know.
-    if crate::type_engine::call_resolution::is_closure_invoke_call(&method_name)
+    if crate::type_engine::call_resolution::is_closure_invoke_call(method_name)
         && let Some(ret_type) =
             crate::type_engine::call_resolution::closure_invoke_return(&receiver_resolved)
     {
@@ -181,9 +212,9 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
     // / `mixed` return types are as specific as an annotation can be.
     // Keyed on the receiver's own type arguments rather than on an owner
     // class, since it is the reflected class the result depends on.
-    if crate::type_engine::call_resolution::is_reflected_property_call(&method_name)
+    if crate::type_engine::call_resolution::is_reflected_property_call(method_name)
         && let Some(ty) = crate::type_engine::call_resolution::resolve_reflected_property_at_call(
-            &method_name,
+            method_name,
             &arg_refs,
             &receiver_resolved,
             &rctx,
@@ -206,14 +237,14 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
     // class.  The entity type rides on the receiver's type argument, not on
     // any owner class.
     if let Some(result) =
-        super::drupal_calls::try_resolve_entity_load_type(&method_name, &receiver_resolved, ctx)
+        super::drupal_calls::try_resolve_entity_load_type(method_name, &receiver_resolved, ctx)
     {
         return result;
     }
     // An entity query on a tagged storage, and the count and the IDs a
     // tagged query gives.
     if let Some(result) = super::drupal_calls::try_resolve_entity_query_call_type(
-        &method_name,
+        method_name,
         &receiver_resolved,
         ctx,
     ) {
@@ -224,7 +255,7 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
     // type arguments, which its DQL decided.
     if let Some(argument_list) = argument_list
         && let Some(result) = super::doctrine_calls::try_resolve_query_result_type(
-            &method_name,
+            method_name,
             &receiver_resolved,
             argument_list,
             ctx,
@@ -236,7 +267,7 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
     // call on it adds to that DQL, and `getQuery()` is typed by it.
     if let Some(argument_list) = argument_list
         && let Some(result) = super::doctrine_calls::try_resolve_dql_builder_call(
-            &method_name,
+            method_name,
             &receiver_resolved,
             argument_list,
             ctx,
@@ -253,7 +284,7 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
     // `validate([…])` reads its rules from its own argument, so it works
     // wherever it is written; every other form asks the scope for them and is
     // a no-op without the server state that reads them.
-    let shape_call = validated_shape::shape_bearing_method(&method_name)
+    let shape_call = validated_shape::shape_bearing_method(method_name)
         .filter(|call| *call == validated_shape::ShapeCall::Validate || ctx.file.backend.is_some());
 
     // Laravel request input: `header('X', '')`, `query()`, `file('photo')`
@@ -261,35 +292,35 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
     // and the arguments say which of those ways this is.  Classified once
     // for the same reason the shape call above is.
     let input_accessor =
-        crate::virtual_members::laravel::request_input::input_accessor(&method_name);
+        crate::virtual_members::laravel::request_input::input_accessor(method_name);
 
     // Each of these reads its answer off the call's arguments, so a
     // first-class callable, which has none, takes the declared type.
     if let Some(argument_list) = argument_list {
         for owner in &owner_classes {
             if let Some(result) =
-                try_resolve_config_method_type(&owner.fqn(), &method_name, argument_list, ctx)
+                try_resolve_config_method_type(&owner.fqn(), method_name, argument_list, ctx)
             {
                 return result;
             }
             if let Some(result) =
-                try_resolve_trans_method_type(&owner.fqn(), &method_name, argument_list, ctx)
+                try_resolve_trans_method_type(&owner.fqn(), method_name, argument_list, ctx)
             {
                 return result;
             }
             if let Some(result) =
-                try_resolve_command_accessor_type(owner, &method_name, argument_list, ctx)
+                try_resolve_command_accessor_type(owner, method_name, argument_list, ctx)
             {
                 return result;
             }
             if let Some(result) =
-                try_resolve_container_lookup_type(owner, &method_name, argument_list, ctx)
+                try_resolve_container_lookup_type(owner, method_name, argument_list, ctx)
             {
                 return result;
             }
             if let Some(result) = super::doctrine_calls::try_resolve_create_query_type(
                 owner,
-                &method_name,
+                method_name,
                 argument_list,
                 ctx,
             ) {
@@ -298,7 +329,7 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
             if let Some(result) = super::doctrine_calls::try_resolve_builder_owner_call(
                 owner,
                 &receiver_resolved,
-                &method_name,
+                method_name,
                 argument_list,
                 ctx,
             ) {
@@ -306,7 +337,7 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
             }
             if let Some(ty) = crate::type_engine::call_resolution::repository_at_call(
                 owner,
-                &method_name,
+                method_name,
                 &arg_refs,
                 &rctx,
             ) {
@@ -319,7 +350,7 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
             }
             if let Some(result) = super::drupal_calls::try_resolve_entity_storage_type(
                 owner,
-                &method_name,
+                method_name,
                 argument_list,
                 ctx,
             ) {
@@ -327,7 +358,7 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
             }
             if let Some(result) = super::drupal_calls::try_resolve_plugin_instance_type(
                 owner,
-                &method_name,
+                method_name,
                 argument_list,
                 ctx,
             ) {
@@ -335,14 +366,14 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
             }
             if let Some(result) = super::drupal_calls::try_resolve_config_object_type(
                 owner,
-                &method_name,
+                method_name,
                 argument_list,
                 ctx,
             ) {
                 return result;
             }
             if let Some(result) =
-                try_resolve_handle_trait_type(owner, &method_name, argument_list, ctx)
+                try_resolve_handle_trait_type(owner, method_name, argument_list, ctx)
             {
                 return result;
             }
@@ -356,7 +387,7 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
                 && let Some(result) = try_resolve_request_accessor_type(
                     owner,
                     accessor,
-                    &method_name,
+                    method_name,
                     argument_list,
                     &arg_refs,
                     ctx,
@@ -375,7 +406,7 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
     // property write that a factory chain feeds.
     if let Some((classes, hint)) = crate::virtual_members::laravel::resolve_factory_count_return_ast(
         object,
-        &method_name,
+        method_name,
         &receiver_resolved,
         ctx.file.content,
         &rctx,
@@ -400,7 +431,7 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
     };
     let fluent_count = crate::virtual_members::laravel::fluent_factory_count(
         &receiver_resolved,
-        &method_name,
+        method_name,
         arg_refs.first().copied(),
         &first_arg_type,
         &rctx,
@@ -422,7 +453,7 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
             .iter()
             .all(|rt| matches!(rt.type_string.kind(), TypeKind::Intersection(_)));
     let mut intersected_results: Vec<Vec<ResolvedType>> = Vec::new();
-    let projection = argument_list.and_then(|_| ProjectionMethod::from_name(&method_name));
+    let projection = argument_list.and_then(|_| ProjectionMethod::from_name(method_name));
 
     for (idx, owner) in owner_classes.iter().enumerate() {
         let receiver_type = receiver_resolved
@@ -444,7 +475,7 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
             // a property projection already has the concrete result.
             let template_subs = crate::type_engine::call_resolution::build_call_template_subs(
                 owner,
-                &method_name,
+                method_name,
                 &arg_refs,
                 receiver_type,
                 &rctx,
@@ -472,7 +503,7 @@ pub(super) fn resolve_member_call_on_receiver<'b>(
 
             resolve_owner_method_call(
                 owner,
-                &method_name,
+                method_name,
                 argument_list,
                 ctx,
                 is_static,
@@ -528,22 +559,10 @@ pub(super) fn selected_member_name(
 ) -> Option<String> {
     match selector {
         ClassLikeMemberSelector::Identifier(ident) => Some(bytes_to_str(ident.value).to_string()),
-        ClassLikeMemberSelector::Variable(Variable::Direct(dv)) => {
-            let resolved = resolve_var_types(bytes_to_str(dv.name), ctx, dv.span.start.offset);
-            if resolved.is_empty() {
-                return None;
-            }
-            match ResolvedType::types_joined(&resolved).kind() {
-                TypeKind::Literal(literal) => match &**literal {
-                    crate::php_type::LiteralValue::String(raw) => {
-                        crate::util::unescape_php_string_literal(raw)
-                    }
-                    _ => None,
-                },
-                _ => None,
-            }
+        _ => {
+            let mut names = super::dynamic_names::member_names(selector, ctx)?;
+            (names.len() == 1).then(|| names.remove(0))
         }
-        _ => None,
     }
 }
 

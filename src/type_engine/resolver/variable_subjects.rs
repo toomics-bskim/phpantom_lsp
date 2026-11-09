@@ -2,7 +2,6 @@
 //! `$variable` (`$obj->$name()`), each read through the forward walker's
 //! scope so narrowing applies to them.
 
-use crate::php_type::TypeKind;
 use crate::type_engine::variable::resolution::VarQuery;
 use crate::types::*;
 
@@ -198,27 +197,18 @@ pub(crate) fn resolve_dynamic_member_names<'a>(
     if !variable.starts_with('$') {
         return vec![Cow::Borrowed(member)];
     }
-    if !is_bare_variable(variable) {
-        return Vec::new();
-    }
-    let mut names: Vec<Cow<'a, str>> = Vec::new();
-    for rt in resolve_variable_fallback(variable, AccessKind::Arrow, ctx) {
-        for ty in rt.type_string.union_members() {
-            let TypeKind::Literal(literal) = ty.kind() else {
-                return Vec::new();
-            };
-            let crate::php_type::LiteralValue::String(raw) = &**literal else {
-                return Vec::new();
-            };
-            let Some(name) = crate::util::unescape_php_string_literal(raw) else {
-                return Vec::new();
-            };
-            if !names.iter().any(|known| *known == name) {
-                names.push(Cow::Owned(name));
-            }
-        }
-    }
-    names
+    let values = if is_bare_variable(variable)
+        && !crate::type_engine::subject_expr::has_indirect_name(variable)
+    {
+        resolve_variable_fallback(variable, AccessKind::Arrow, ctx)
+    } else {
+        super::indirect_subject::resolve(variable, AccessKind::Arrow, ctx)
+    };
+    crate::type_engine::variable::rhs_resolution::dynamic_names::known_names(&values)
+        .unwrap_or_default()
+        .into_iter()
+        .map(Cow::Owned)
+        .collect()
 }
 
 /// Resolve a bare `$var` subject to its classes.

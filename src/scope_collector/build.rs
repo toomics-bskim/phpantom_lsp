@@ -402,6 +402,31 @@ pub(crate) fn collect_function_scope_with_kind_and_resolver<'a>(
     )
 }
 
+/// Collect a function or method with the local slots its indirect reads name.
+pub(crate) fn collect_function_scope_with_indirect_reads(
+    params: &FunctionLikeParameterList<'_>,
+    body: &[Statement<'_>],
+    body_start: u32,
+    body_end: u32,
+    kind: FrameKind,
+    resolve: IndirectReadResolver<'_>,
+) -> ScopeMap {
+    let mut collector = Collector::new();
+    collector.indirect_read_resolver = Some(resolve);
+    collect_scope_with_collector(
+        ScopeParams {
+            declared: Some(params),
+            implicit: &[],
+        },
+        ScopeBody::Statements(body),
+        body_start,
+        body_end,
+        kind,
+        collector,
+        None,
+    )
+}
+
 /// The shared implementation behind every `collect_*_scope` helper.
 ///
 /// `params` is optional because a property hook may declare no
@@ -416,10 +441,30 @@ fn collect_scope_with_kind_and_resolver<'a>(
     resolver: Option<ByRefResolver<'_>>,
     enclosing_class_name: Option<String>,
 ) -> ScopeMap {
-    let mut collector = match resolver {
+    let collector = match resolver {
         Some(r) => Collector::with_resolver(r),
         None => Collector::new(),
     };
+    collect_scope_with_collector(
+        params,
+        body,
+        body_start,
+        body_end,
+        kind,
+        collector,
+        enclosing_class_name,
+    )
+}
+
+fn collect_scope_with_collector<'a>(
+    params: ScopeParams<'_, 'a>,
+    body: ScopeBody<'_, 'a>,
+    body_start: u32,
+    body_end: u32,
+    kind: FrameKind,
+    mut collector: Collector<'_>,
+    enclosing_class_name: Option<String>,
+) -> ScopeMap {
     collector.enclosing_class_name = enclosing_class_name;
 
     let param_names: Vec<String> = params

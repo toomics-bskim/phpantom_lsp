@@ -182,6 +182,13 @@ and switch coverage share its coercion rules. The value model takes the
 rules explicitly; it does not read request state. Strict comparison stays
 independent of the target.
 
+PHP 5 indirect offsets lower to the existing variable and member expression
+selectors with original source spans and implicit brace spans. Formatting
+makes those braces explicit. Literal names resolve through the ordinary scope
+and RHS readers, bounded to 16 candidates and 32 indirections. Text subjects
+retain their source spelling and select the matching expression in the cached
+CST, so completion and diagnostics use the same target-specific binding.
+
 Legacy curly offsets lower to the existing `ArrayAccess` node with the
 original delimiter spans. No source rewrite or second type engine is
 needed. Short tags remain enabled; PHP 5 targets additionally recognize

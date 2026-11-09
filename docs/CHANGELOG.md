@@ -243,6 +243,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Type inference
 
 - **Loose comparisons follow the project's PHP version.** Branch types now preserve values that compare equal on PHP 5 and 7, including numeric string coercion, while keeping PHP 8's comparison rules.
+- **Known indirect names retain their types.** Completion and diagnostics resolve reads through statically known variable and member names. PHP 5 projects keep their original access order, including after formatting adds explicit braces.
 - **Legacy constructors.** Class-name constructors in PHP 5 and PHP 7 projects supply constructor signatures and argument checks, including when inherited. Completion and type inference follow the selected constructor; PHP 8 keeps these methods ordinary.
 - **Native type hints in PHP 5 projects.** With a PHP 5.5 or 5.6 target, hints such as `int` resolve as class names for completion, navigation, and argument checks. PHPDoc types and modern PHP's built-in hints keep their usual meaning.
 - **Constants passed to calls.** Namespaced and imported constants keep their values and types when used as arguments. Contributed by @shuvroroy.

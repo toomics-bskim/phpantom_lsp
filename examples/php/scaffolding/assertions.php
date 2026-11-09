@@ -2217,6 +2217,9 @@ function runDemoAssertions(): void
     assert($unused->bill(7) === 'N-7', 'nothing writes $discount, so it adds nothing');
 
     $loose = new LooseComparisonDemo();
+    $indirect = new IndirectNameDemo();
+    assert($indirect->selectedPen() instanceof Scaffolding\Pen);
+    assert($indirect->selectedPen()->color() === 'black');
     assert($loose->select('foo') === 'foo');
     assert($loose->select(0) === (PHP_VERSION_ID < 80000 ? 0 : null));
     assert($loose->select(1) === null);

@@ -10,7 +10,7 @@ namespace PsalmTest_php55_1 {
 
     // PHPantom keeps the literal values Psalm's assertion widens to their base type.
     assertType('1', $a);
-    assertType('string', $b);
+    assertType("'P'", $b);
 }
 
 // Test: classString
@@ -22,4 +22,3 @@ namespace PsalmTest_php55_2 {
     // PHPantom keeps the class a `::class` literal names, where Psalm's assertion widens it to `class-string`.
     assertType('class-string<ClassName>', $a);
 }
-

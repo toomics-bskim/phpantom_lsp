@@ -6003,3 +6003,16 @@ class LooseComparisonDemo
         return null;
     }
 }
+
+// ─── Statically known indirect names ──────────────────────────────────
+
+class IndirectNameDemo
+{
+    public function selectedPen(): Scaffolding\Pen
+    {
+        $pen = new Scaffolding\Pen();
+        $names = ['selected' => 'pen'];
+        // Try: `${$names['selected']}->` — Scaffolding\Pen members.
+        return ${$names['selected']};
+    }
+}

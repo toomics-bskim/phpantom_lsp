@@ -205,7 +205,6 @@ source syntax, runtime semantics, built-ins, and editor behavior.
 
 | # | Item | Impact | Complexity |
 | --- | --- | --- | --- |
-| LP11 | [Resolve legacy dynamic variable binding](todo/legacy-php.md#lp11-resolve-legacy-dynamic-variable-binding) | Medium-High | High |
 | LP12 | [Destructuring updates append targets in runtime order](todo/legacy-php.md#lp12-destructuring-updates-append-targets-in-runtime-order) | Medium-High | High |
 | LP13 | [Legacy constant lookup preserves name rules](todo/legacy-php.md#lp13-legacy-constant-lookup-preserves-name-rules) | Medium | Medium-High |
 | LP14 | [Built-in argument and return contracts match PHP 5](todo/legacy-php.md#lp14-built-in-argument-and-return-contracts-match-php-5) | High | Medium-High |
@@ -214,6 +213,7 @@ source syntax, runtime semantics, built-ins, and editor behavior.
 | LP17 | [Variadic and unpacked calls carry argument types](todo/legacy-php.md#lp17-variadic-and-unpacked-calls-carry-argument-types) | Medium-High | High |
 | LP19 | [Remaining generated edits respect the target language](todo/legacy-php.md#lp19-remaining-generated-edits-respect-the-target-language) | High | Medium-High |
 | LP20 | [Constructor access and explicit calls follow legacy rules](todo/legacy-php.md#lp20-constructor-access-and-explicit-calls-follow-legacy-rules) | High | Medium-High |
+| LP21 | [Dynamic names preserve writes and scope effects](todo/legacy-php.md#lp21-dynamic-names-preserve-writes-and-scope-effects) | Medium-High | High |
 | LP18 | [Qualify and document the support contract](todo/legacy-php.md#lp18-qualify-and-document-the-support-contract) | High | Medium |
 
 ## Type Inference

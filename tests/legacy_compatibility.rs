@@ -1760,3 +1760,328 @@ fn future_keyword_recovery_preserves_legacy_calls_and_type_names() {
         assert!(diagnostics.is_empty(), "{version}: {diagnostics:?}");
     }
 }
+
+#[tokio::test]
+async fn dynamic_names_resolve_through_the_shared_scope() {
+    for version in [
+        PhpVersion::new(5, 5),
+        PhpVersion::new(5, 6),
+        PhpVersion::new(7, 4),
+        PhpVersion::new(8, 0),
+    ] {
+        let (dir, backend) = project(version).await;
+        let text = r#"<?php
+class DynamicValue { function ping() {} }
+class DynamicBox {
+    /** @var DynamicValue */ public $item;
+    /** @var DynamicValue */ public static $shared;
+    /** @return DynamicValue */ function make() { return new DynamicValue(); }
+    /** @return DynamicValue */ static function build() { return new DynamicValue(); }
+}
+$name = 'value';
+$next = 'name';
+$value = new DynamicValue();
+$names = array('key' => 'value');
+$direct = $$name;
+$direct;
+$braced = ${$name};
+$braced;
+$nested = $$$next;
+$nested;
+$offset = ${$names['key']};
+$offset;
+$box = new DynamicBox();
+$propertyName = 'item';
+$property = $box->{$propertyName};
+$property;
+$staticName = 'shared';
+$static = DynamicBox::${$staticName};
+$static;
+$methodName = 'make';
+$method = $box->{$methodName}();
+$method;
+$staticMethodName = 'build';
+$staticMethod = DynamicBox::{$staticMethodName}();
+$staticMethod;
+$direct->missing();
+"#;
+        let uri = open(&backend, dir.path(), "dynamic-names", text).await;
+        for name in [
+            "direct",
+            "braced",
+            "nested",
+            "offset",
+            "property",
+            "static",
+            "method",
+            "staticMethod",
+        ] {
+            let pos = common::position_of(text, &format!("${name};"));
+            let hover = common::markup_hover_at(&backend, &uri, pos.line, pos.character + 2).await;
+            assert!(
+                hover.contains(&format!("${name} = DynamicValue\n")),
+                "{version} {name}: {hover}"
+            );
+        }
+        let diagnostics = ready_diagnostics(&backend, &uri).await;
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| common::message_text(&d.message).contains("missing")),
+            "{version}: {diagnostics:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn indirect_binding_matches_legacy_and_modern_runtimes() {
+    let cases: Value =
+        serde_json::from_str(include_str!("compatibility/indirection.json")).unwrap();
+    let stem = include_str!("compatibility/indirection.php");
+    for version in [
+        PhpVersion::new(5, 5),
+        PhpVersion::new(5, 6),
+        PhpVersion::new(7, 4),
+        PhpVersion::new(8, 0),
+    ] {
+        let (dir, backend) = project(version).await;
+        let mut exported = Vec::new();
+        for case in cases.as_array().unwrap() {
+            let id = case["id"].as_str().unwrap();
+            let expected = case[if version.major == 5 {
+                "legacy"
+            } else {
+                "modern"
+            }]
+            .as_str()
+            .unwrap();
+            let before = case["before"].as_str().unwrap_or("");
+            let expression = case["expression"].as_str().unwrap();
+            for (ending, newline) in [("lf", "\n"), ("crlf", "\r\n")] {
+                let id = format!("{id}-{ending}");
+                let text = format!("{stem}\n{before}\n$probe = {expression};\n$probe;\n")
+                    .replace('\n', newline);
+                let uri = open(&backend, dir.path(), &id, &text).await;
+                let pos = common::position_of_last(&text, "$probe;");
+                let hover =
+                    common::markup_hover_at(&backend, &uri, pos.line, pos.character + 2).await;
+                assert!(
+                    hover.contains(&format!("$probe = {expected}\n")),
+                    "{version} {id}: {hover}"
+                );
+                let diagnostics = ready_diagnostics(&backend, &uri).await;
+                assert!(diagnostics.is_empty(), "{version} {id}: {diagnostics:?}");
+                let mut fixture = runtime_case(&id, &text, &json!(["string", expected]));
+                fixture["runtime"]["probe"] = json!("get_class($probe)");
+                exported.push(fixture);
+                if version.major == 5 {
+                    let formatted = format(&backend, &uri, &text, false).await;
+                    let formatted_id = format!("{id}-formatted");
+                    let formatted_uri = open(&backend, dir.path(), &formatted_id, &formatted).await;
+                    assert_eq!(
+                        formatted,
+                        format(&backend, &formatted_uri, &formatted, false).await,
+                        "{version} {id}: formatting must be idempotent"
+                    );
+                    let pos = common::position_of_last(&formatted, "$probe;");
+                    let hover = common::markup_hover_at(
+                        &backend,
+                        &formatted_uri,
+                        pos.line,
+                        pos.character + 2,
+                    )
+                    .await;
+                    assert!(
+                        hover.contains(&format!("$probe = {expected}\n")),
+                        "{version} {formatted_id}: {hover}"
+                    );
+                    let mut fixture =
+                        runtime_case(&formatted_id, &formatted, &json!(["string", expected]));
+                    fixture["runtime"]["probe"] = json!("get_class($probe)");
+                    exported.push(fixture);
+                }
+            }
+        }
+        if let Some(output) = std::env::var_os("PHPANTOM_COMPAT_OUTPUT") {
+            std::fs::create_dir_all(&output).unwrap();
+            std::fs::write(
+                Path::new(&output).join(format!("indirection-{version}.json")),
+                serde_json::to_vec_pretty(
+                    &json!({"target": version.to_string(), "cases": exported}),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+async fn indirect_receivers_share_completion_and_diagnostics() {
+    let cases: Value =
+        serde_json::from_str(include_str!("compatibility/indirection.json")).unwrap();
+    let stem = include_str!("compatibility/indirection.php");
+    for version in [
+        PhpVersion::new(5, 5),
+        PhpVersion::new(5, 6),
+        PhpVersion::new(7, 4),
+        PhpVersion::new(8, 0),
+    ] {
+        let (dir, backend) = project(version).await;
+        for case in cases.as_array().unwrap() {
+            let id = case["id"].as_str().unwrap();
+            let expected = case[if version.major == 5 {
+                "legacy"
+            } else {
+                "modern"
+            }]
+            .as_str()
+            .unwrap();
+            let member = if expected == "LegacyValue" {
+                "legacyMember"
+            } else {
+                "modernMember"
+            };
+            let before = case["before"].as_str().unwrap_or("");
+            let expression = case["expression"].as_str().unwrap();
+            let text =
+                format!("{stem}\n{before}\n{expression}->{member}();\n{expression}->missing();\n");
+            let uri = open(&backend, dir.path(), id, &text).await;
+            let diagnostics = ready_diagnostics(&backend, &uri).await;
+            assert!(
+                diagnostics
+                    .iter()
+                    .any(|d| common::message_text(&d.message).contains("missing")),
+                "{version} {id}: {diagnostics:?}"
+            );
+            assert!(
+                !diagnostics
+                    .iter()
+                    .any(|d| common::message_text(&d.message).contains(&format!("::{member}"))),
+                "{version} {id}: {diagnostics:?}"
+            );
+            let text = format!("{stem}\n{before}\n{expression}->");
+            let uri = open(&backend, dir.path(), &format!("{id}-completion"), &text).await;
+            let pos = common::offset_position(&text, text.len());
+            let completion =
+                common::completion_response(&backend, &uri, pos.line, pos.character, None).await;
+            let completion = serde_json::to_value(completion).unwrap().to_string();
+            assert!(completion.contains(member), "{version} {id}: {completion}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn dynamic_names_preserve_unions_namespace_and_unknown_values() {
+    let text = r#"<?php
+namespace { class Value { function globalOnly() {} } }
+namespace Domain { class Value { function domainOnly() {} } }
+namespace Consumer {
+use Domain\Value as Selected;
+class Other { function otherOnly() {} }
+class Factory {
+    /** @return Selected */ function first() { return new Selected(); }
+    /** @return Other */ function second() { return new Other(); }
+}
+/** @param string $unknown */
+function example($flag, $unknown) {
+    $first = new Selected();
+    $second = new Other();
+    $name = $flag ? 'first' : 'second';
+    $union = $$name;
+    $union;
+    $factory = new Factory();
+    $methods = $factory->{$name}();
+    $methods;
+    $uncertainName = $flag ? 'first' : $unknown;
+    $uncertain = $$uncertainName;
+    $uncertain;
+    $name = 'first';
+    $$name->domainOnly();
+    $$name->globalOnly();
+}
+}
+"#;
+    for version in [
+        PhpVersion::new(5, 5),
+        PhpVersion::new(5, 6),
+        PhpVersion::new(8, 0),
+    ] {
+        let (dir, backend) = project(version).await;
+        let uri = open(&backend, dir.path(), "dynamic-unions", text).await;
+        for variable in ["union", "methods"] {
+            let pos = common::position_of(text, &format!("${variable};"));
+            let hover = common::markup_hover_at(&backend, &uri, pos.line, pos.character + 2).await;
+            assert!(
+                hover.contains("namespace Domain;")
+                    && hover.contains("namespace Consumer;")
+                    && hover.contains(&format!("${variable} = Value"))
+                    && hover.contains(&format!("${variable} = Other")),
+                "{version} {variable}: {hover}"
+            );
+        }
+        let pos = common::position_of(text, "$uncertain;");
+        let hover = common::markup_hover_at(&backend, &uri, pos.line, pos.character + 2).await;
+        assert!(hover.contains("mixed"), "{version}: {hover}");
+        let diagnostics = ready_diagnostics(&backend, &uri).await;
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| common::message_text(&d.message).contains("globalOnly")),
+            "{version}: {diagnostics:?}"
+        );
+        assert!(
+            !diagnostics
+                .iter()
+                .any(|d| common::message_text(&d.message).contains("domainOnly")),
+            "{version}: {diagnostics:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn indirect_reads_count_as_uses_only_in_their_own_scope() {
+    let text = r#"<?php
+function selected($flag) {
+    $first = new DateTime();
+    $second = new stdClass();
+    $unused = new stdClass();
+    $names = array('key' => $flag ? 'first' : 'second');
+    return ${$names['key']};
+}
+function scopes() {
+    $value = new DateTime();
+    $run = function () {
+        $value = new DateTime();
+        $name = 'value';
+        return $$name;
+    };
+    return $run;
+}
+function writeOnly() {
+    $value = new DateTime();
+    $name = 'value';
+    $$name = new stdClass();
+}
+"#;
+    for version in [
+        PhpVersion::new(5, 5),
+        PhpVersion::new(5, 6),
+        PhpVersion::new(8, 0),
+    ] {
+        let (dir, backend) = project(version).await;
+        let uri = open(&backend, dir.path(), "indirect-uses", text).await;
+        let mut diagnostics = Vec::new();
+        backend.collect_unused_variable_diagnostics(uri.as_str(), text, &mut diagnostics);
+        let lines: Vec<_> = diagnostics.iter().map(|d| d.range.start.line).collect();
+        let expected: Vec<_> = [
+            "$unused =",
+            "$value = new DateTime();\n    $run",
+            "$value = new DateTime();\n    $name",
+        ]
+        .iter()
+        .map(|needle| common::position_of(text, needle).line)
+        .collect();
+        assert_eq!(lines, expected, "{version}: {diagnostics:?}");
+    }
+}

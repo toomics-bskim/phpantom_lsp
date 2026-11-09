@@ -1,0 +1,21 @@
+[
+  { "id": "nested_variable", "before": "$ab = 'xy'; $xy = array(1 => new ModernValue()); $b = 'chosen'; $chosen = new LegacyValue();", "expression": "$$$names[1]", "legacy": "LegacyValue", "modern": "ModernValue" },
+  { "id": "multiple_offsets", "before": "$ab = array(1 => array(0 => new ModernValue()));", "expression": "$$names[1][0]", "legacy": "LegacyValue", "modern": "ModernValue" },
+  { "id": "nested_property", "before": "$ab = 'ab'; $b = 'b';", "expression": "$object->$$names[1]", "legacy": "LegacyValue", "modern": "ModernValue" },
+  { "id": "variable", "expression": "$$names[1]", "legacy": "LegacyValue", "modern": "ModernValue" },
+  { "id": "variable_legacy", "expression": "${$names[1]}", "legacy": "LegacyValue", "modern": "LegacyValue" },
+  { "id": "variable_modern", "expression": "${$names}[1]", "legacy": "ModernValue", "modern": "ModernValue" },
+  { "id": "property", "expression": "$object->$names[1]", "legacy": "LegacyValue", "modern": "ModernValue" },
+  { "id": "property_legacy", "expression": "$object->{$names[1]}", "legacy": "LegacyValue", "modern": "LegacyValue" },
+  { "id": "property_modern", "expression": "$object->{$names}[1]", "legacy": "ModernValue", "modern": "ModernValue" },
+  { "id": "method", "expression": "$calls->$names[1]()", "legacy": "LegacyValue", "modern": "ModernValue" },
+  { "id": "method_legacy", "expression": "$calls->{$names[1]}()", "legacy": "LegacyValue", "modern": "LegacyValue" },
+  { "id": "method_modern", "expression": "$calls->{$names}[1]()", "legacy": "ModernValue", "modern": "ModernValue" },
+  { "id": "static_property", "expression": "StaticHolder::$$names[1]", "legacy": "LegacyValue", "modern": "ModernValue" },
+  { "id": "static_property_legacy", "expression": "StaticHolder::${$names[1]}", "legacy": "LegacyValue", "modern": "LegacyValue" },
+  { "id": "static_property_modern", "expression": "StaticHolder::${$names}[1]", "legacy": "ModernValue", "modern": "ModernValue" },
+  { "id": "static_method", "expression": "StaticCalls::$names[1]()", "legacy": "LegacyValue", "modern": "ModernValue" },
+  { "id": "static_method_legacy", "expression": "StaticCalls::{$names[1]}()", "legacy": "LegacyValue", "modern": "LegacyValue" },
+  { "id": "static_method_braced_variable", "expression": "StaticCalls::${'names'}[1]()", "legacy": "LegacyValue", "modern": "ModernValue" },
+  { "id": "static_method_modern", "before": "$selected = StaticCalls::$names;", "expression": "$selected[1]()", "legacy": "ModernValue", "modern": "ModernValue" }
+]
