@@ -176,6 +176,12 @@ grammar: availability attributes describe older APIs using newer syntax.
 The formatter passes its target into `ParserSettings` independently and
 shares the same lexer and version-sensitive concatenation precedence.
 
+The same source scope selects `ComparisonSemantics` for loose equality.
+Literal comparison, condition and `in_array()` refinement, switch labels
+and switch coverage share its coercion rules. The value model takes the
+rules explicitly; it does not read request state. Strict comparison stays
+independent of the target.
+
 Legacy curly offsets lower to the existing `ArrayAccess` node with the
 original delimiter spans. No source rewrite or second type engine is
 needed. Short tags remain enabled; PHP 5 targets additionally recognize

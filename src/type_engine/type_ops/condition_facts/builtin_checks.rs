@@ -529,7 +529,7 @@ fn extract_null_comparison(expr: &Expression<'_>, var_name: &str) -> Option<Null
                 BinaryOperator::Identical(_) => (true, true),
                 BinaryOperator::Equal(_) => (true, false),
                 BinaryOperator::NotIdentical(_) => (false, true),
-                BinaryOperator::NotEqual(_) => (false, false),
+                BinaryOperator::NotEqual(_) | BinaryOperator::AngledNotEqual(_) => (false, false),
                 _ => return None,
             };
             let (subject, literal) = if is_null_literal(bin.rhs) {

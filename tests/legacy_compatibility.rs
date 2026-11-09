@@ -356,6 +356,391 @@ fn runtime_case(id: &str, text: &str, value: &Value) -> Value {
 }
 
 #[test]
+fn loose_comparison_reference_matrix() {
+    use phpantom_lsp::php_type::{ComparisonSemantics, PhpType};
+    let cases: Value =
+        serde_json::from_str(include_str!("compatibility/comparisons.json")).unwrap();
+    for version in [
+        PhpVersion::new(5, 5),
+        PhpVersion::new(5, 6),
+        PhpVersion::new(7, 4),
+        PhpVersion::new(8, 0),
+    ] {
+        let semantics = ComparisonSemantics::from_major(version.major);
+        let column = match version.major {
+            5 => 0,
+            7 => 1,
+            _ => 2,
+        };
+        let mut exported = Vec::new();
+        for (index, case) in cases.as_array().unwrap().iter().enumerate() {
+            let left = case["left"].as_str().unwrap();
+            let right = case["right"].as_str().unwrap();
+            let expected = case["equal"][column].as_bool().unwrap();
+            let ty = |text: &str| PhpType::parse(if text == "array()" { "array{}" } else { text });
+            assert_eq!(
+                semantics.values_equal(&ty(left), &ty(right)),
+                Some(expected),
+                "{version}: {left} == {right}"
+            );
+            for (name, expression, value) in [
+                ("equal", format!("{left} == {right}"), expected),
+                ("reversed", format!("{right} == {left}"), expected),
+                ("unequal", format!("{left} != {right}"), !expected),
+                ("angled", format!("{left} <> {right}"), !expected),
+                (
+                    "in_array",
+                    format!("in_array({left}, array({right}))"),
+                    expected,
+                ),
+            ] {
+                exported.push(runtime_case(
+                    &format!("{index}-{name}"),
+                    &format!("<?php\n$probe = {expression};\n"),
+                    &json!(["boolean", value]),
+                ));
+            }
+            let text = format!(
+                "<?php\n$probe = false; switch ({left}) {{ case {right}: $probe = true; break; }}\n"
+            );
+            exported.push(runtime_case(
+                &format!("{index}-switch"),
+                &text,
+                &json!(["boolean", expected]),
+            ));
+        }
+        if let Some(output) = std::env::var_os("PHPANTOM_COMPAT_OUTPUT") {
+            std::fs::create_dir_all(&output).unwrap();
+            std::fs::write(
+                Path::new(&output).join(format!("comparisons-{version}.json")),
+                serde_json::to_vec_pretty(
+                    &json!({"target": version.to_string(), "cases": exported}),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+async fn loose_comparison_narrowing_obeys_the_project_target() {
+    use phpantom_lsp::php_type::PhpType;
+
+    for version in [
+        PhpVersion::new(5, 5),
+        PhpVersion::new(5, 6),
+        PhpVersion::new(7, 4),
+        PhpVersion::new(8, 0),
+    ] {
+        let (dir, backend) = project(version).await;
+        let legacy = version.major < 8;
+        for (id, input, condition, yes, no) in [
+            (
+                "equal",
+                "0|'foo'|1",
+                "$value == 'foo'",
+                if legacy { "0|'foo'" } else { "'foo'" },
+                if legacy { "1" } else { "0|1" },
+            ),
+            (
+                "reversed",
+                "0|'foo'|1",
+                "'foo' == $value",
+                if legacy { "0|'foo'" } else { "'foo'" },
+                if legacy { "1" } else { "0|1" },
+            ),
+            (
+                "unequal",
+                "0|'foo'|1",
+                "$value != 'foo'",
+                if legacy { "1" } else { "0|1" },
+                if legacy { "0|'foo'" } else { "'foo'" },
+            ),
+            (
+                "angled",
+                "0|'foo'|1",
+                "$value <> 'foo'",
+                if legacy { "1" } else { "0|1" },
+                if legacy { "0|'foo'" } else { "'foo'" },
+            ),
+            (
+                "negated",
+                "0|'foo'|1",
+                "!($value == 'foo')",
+                if legacy { "1" } else { "0|1" },
+                if legacy { "0|'foo'" } else { "'foo'" },
+            ),
+            (
+                "in_array",
+                "0|'foo'|1",
+                "in_array($value, array('foo'))",
+                if legacy { "0|'foo'" } else { "'foo'" },
+                if legacy { "1" } else { "0|1" },
+            ),
+            ("strict", "0|'foo'|1", "$value === 'foo'", "'foo'", "0|1"),
+            (
+                "strict_array",
+                "0|'foo'|1",
+                "in_array($value, array('foo'), true)",
+                "'foo'",
+                "0|1",
+            ),
+            (
+                "prefix",
+                "42|'42foo'|7",
+                "$value == 42",
+                if legacy { "42|'42foo'" } else { "42" },
+                if legacy { "7" } else { "'42foo'|7" },
+            ),
+            (
+                "hex",
+                "'0x10'|'16'|'other'",
+                "$value == '16'",
+                if version.major == 5 {
+                    "'0x10'|'16'"
+                } else {
+                    "'16'"
+                },
+                if version.major == 5 {
+                    "'other'"
+                } else {
+                    "'0x10'|'other'"
+                },
+            ),
+            (
+                "space",
+                "'42'|'42 '|'other'",
+                "$value == '42'",
+                if legacy { "'42'" } else { "'42'|'42 '" },
+                if legacy { "'42 '|'other'" } else { "'other'" },
+            ),
+            (
+                "bool",
+                "false|true|0|'foo'",
+                "$value == false",
+                "false|0",
+                "true|'foo'",
+            ),
+            (
+                "null",
+                "null|0|''|'0'",
+                "$value == null",
+                "null|0|''",
+                "'0'",
+            ),
+            (
+                "null_array",
+                "null|0|''|'0'",
+                "in_array($value, array(null))",
+                "null|0|''",
+                "'0'",
+            ),
+            (
+                "bool_array",
+                "false|true|0|'foo'",
+                "in_array($value, array(false))",
+                "false|0",
+                "true|'foo'",
+            ),
+        ] {
+            let text = format!(
+                "<?php\n/** @param {input} $value */\nfunction sample($value) {{\nif ({condition}) {{\n$value; // yes\n}} else {{\n$value; // no\n}}\n}}\n"
+            );
+            let uri = open(&backend, dir.path(), id, &text).await;
+            for (marker, expected) in [("$value; // yes", yes), ("$value; // no", no)] {
+                let pos = common::position_of(&text, marker);
+                let hover =
+                    common::markup_hover_at(&backend, &uri, pos.line, pos.character + 2).await;
+                let actual = hover
+                    .split_once("$value = ")
+                    .and_then(|(_, text)| text.lines().next())
+                    .unwrap_or(&hover);
+                assert!(
+                    PhpType::parse(actual).equivalent(&PhpType::parse(expected)),
+                    "{version} {id} {marker}: expected {expected}, got {hover}"
+                );
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn loose_switch_and_broad_types_keep_reachable_legacy_values() {
+    for version in [
+        PhpVersion::new(5, 5),
+        PhpVersion::new(5, 6),
+        PhpVersion::new(8, 0),
+    ] {
+        let (dir, backend) = project(version).await;
+        let text = r#"<?php
+/** @param 0|'foo'|1 $value */
+function branches($value) {
+    switch ($value) {
+        case 'foo':
+            $value; // matched
+            break;
+        default:
+            $value; // default
+    }
+}
+
+/** @param string $value */
+function broad($value) {
+    if ($value == 42) { $value; // broad
+    }
+}
+/** @param mixed $value */
+function anything($value) {
+    if ($value == 'foo') { $value; // mixed
+    }
+}
+function accept_date(DateTime $value) {}
+accept_date(new Exception());
+"#;
+        let uri = open(&backend, dir.path(), "switch", text).await;
+        let legacy = version.major == 5;
+        for (marker, expected) in [
+            (
+                "$value; // matched",
+                if legacy { "0|'foo'" } else { "'foo'" },
+            ),
+            ("$value; // default", if legacy { "1" } else { "0|1" }),
+            (
+                "$value; // broad",
+                if legacy { "string" } else { "numeric-string" },
+            ),
+        ] {
+            let pos = common::position_of(text, marker);
+            let hover = common::markup_hover_at(&backend, &uri, pos.line, pos.character + 2).await;
+            let actual = hover
+                .split_once("$value = ")
+                .and_then(|(_, text)| text.lines().next())
+                .unwrap_or(&hover);
+            assert!(
+                phpantom_lsp::php_type::PhpType::parse(actual)
+                    .equivalent(&phpantom_lsp::php_type::PhpType::parse(expected)),
+                "{version} {marker}: {hover}"
+            );
+        }
+        let pos = common::position_of(text, "$value; // mixed");
+        let hover = common::markup_hover_at(&backend, &uri, pos.line, pos.character + 2).await;
+        assert_eq!(hover.contains("0"), legacy, "{version}: {hover}");
+        assert!(hover.contains("'foo'"), "{version}: {hover}");
+        let diagnostics = ready_diagnostics(&backend, &uri).await;
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| common::message_text(&d.message).contains("expects DateTime")),
+            "{version}: {diagnostics:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn loose_comparisons_survive_guard_alias_and_switch_fallthrough() {
+    use phpantom_lsp::php_type::PhpType;
+    for version in [
+        PhpVersion::new(5, 5),
+        PhpVersion::new(5, 6),
+        PhpVersion::new(8, 0),
+    ] {
+        let (dir, backend) = project(version).await;
+        let text = r#"<?php
+/** @param 0|'foo'|1 $value */
+function guard($value) {
+    if ($value <> 'foo') { return; }
+    $value; // guard
+}
+/** @param 0|'foo'|1 $value */
+function alias($value) {
+    $different = $value <> 'foo';
+    if (!$different) { $value; // alias
+    }
+}
+/** @param 0|'foo'|1 $value */
+function fallthrough($value) {
+    switch ($value) {
+        case 'foo':
+        case 1:
+            $value; // fallthrough
+    }
+}
+/** @param 0|'foo'|1 $value */
+function compound($value) {
+    if ($value == 'foo' && $value !== 'foo') { $value; // compound
+    }
+}
+/** @param array{kind: 0|'foo'|1} $row */
+function offset($row) {
+    switch ($row['kind']) {
+        case 'foo':
+            $probe = $row['kind'];
+            $probe; // offset
+    }
+}
+"#;
+        let uri = open(&backend, dir.path(), "flow", text).await;
+        let legacy = version.major == 5;
+        for (marker, name, expected) in [
+            (
+                "$value; // guard",
+                "$value",
+                if legacy { "0|'foo'" } else { "'foo'" },
+            ),
+            (
+                "$value; // alias",
+                "$value",
+                if legacy { "0|'foo'" } else { "'foo'" },
+            ),
+            (
+                "$value; // fallthrough",
+                "$value",
+                if legacy { "0|'foo'|1" } else { "'foo'|1" },
+            ),
+            (
+                "$probe; // offset",
+                "$probe",
+                if legacy { "0|'foo'" } else { "'foo'" },
+            ),
+        ] {
+            let pos = common::position_of(text, marker);
+            let hover = common::markup_hover_at(&backend, &uri, pos.line, pos.character + 2).await;
+            let actual = hover
+                .split_once(&format!("{name} = "))
+                .and_then(|(_, text)| text.lines().next())
+                .unwrap_or(&hover);
+            assert!(
+                PhpType::parse(actual).equivalent(&PhpType::parse(expected)),
+                "{version} {marker}: {hover}"
+            );
+        }
+        if legacy {
+            let pos = common::position_of(text, "$value; // compound");
+            let hover = common::markup_hover_at(&backend, &uri, pos.line, pos.character + 2).await;
+            assert!(hover.contains("$value = 0\n"), "{version}: {hover}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn loose_switch_coverage_changes_at_php_eight() {
+    for version in [PhpVersion::new(7, 4), PhpVersion::new(8, 0)] {
+        let (dir, backend) = project(version).await;
+        let text = "<?php\n/** @param 0|'foo' $value */\nfunction covered($value): int { switch ($value) { case 'foo': return 1; } }\n";
+        let uri = open(&backend, dir.path(), "coverage", text).await;
+        let diagnostics = ready_diagnostics(&backend, &uri).await;
+        assert_eq!(
+            diagnostics
+                .iter()
+                .any(|d| d.code == Some(Code::String("missing_return".into()))),
+            version.major == 8,
+            "{version}: {diagnostics:?}"
+        );
+    }
+}
+
+#[test]
 fn parser_preserves_versioned_expression_structure_and_offsets() {
     use mago_span::HasSpan;
     use mago_syntax::cst::{BinaryOperator, Expression, Statement};

@@ -31,6 +31,7 @@ use mago_span::{Position, Span};
 use crate::atom::{Atom, atom, bytes_to_str};
 use crate::doctrine::query::QueryBuilderState;
 
+mod comparison;
 mod components;
 mod constructors;
 mod display;
@@ -47,6 +48,7 @@ mod subtype;
 mod transform;
 mod truthiness;
 
+pub use comparison::ComparisonSemantics;
 #[cfg(any(test, feature = "mem-audit"))]
 pub(crate) use intern::interned_len;
 pub(crate) use intern::{FxHasher, PassThroughHasher};

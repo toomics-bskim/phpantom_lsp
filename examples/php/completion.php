@@ -5984,3 +5984,22 @@ class NestedAssignmentDemo
         return $pen?->color() ?? '';
     }
 }
+
+// ─── Loose comparisons follow the project target ──────────────────────
+
+class LooseComparisonDemo
+{
+    /**
+     * @param 0|'foo'|1 $value
+     * @return 0|'foo'|null
+     */
+    public function select($value)
+    {
+        if ($value == 'foo') {
+            // Try: hover $value — 'foo' on PHP 8, 0|'foo' on PHP 5/7.
+            return $value;
+        }
+
+        return null;
+    }
+}

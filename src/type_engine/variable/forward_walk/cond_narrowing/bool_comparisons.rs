@@ -31,7 +31,7 @@ pub(super) fn apply_bool_comparison_narrowing<'b>(
         BinaryOperator::Identical(_) => (true, true),
         BinaryOperator::Equal(_) => (true, false),
         BinaryOperator::NotIdentical(_) => (false, true),
-        BinaryOperator::NotEqual(_) => (false, false),
+        BinaryOperator::NotEqual(_) | BinaryOperator::AngledNotEqual(_) => (false, false),
         _ => return,
     };
     let (operand, literal) = match (bool_literal(bin.lhs), bool_literal(bin.rhs)) {

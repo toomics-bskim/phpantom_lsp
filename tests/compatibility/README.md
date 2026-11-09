@@ -38,6 +38,22 @@ With an `8.5` target the same expression returns string `"103"`, which formattin
 must also preserve. The patched dependency sources and their provenance are
 documented in [`third_party/mago`](../../third_party/mago/README.md).
 
+## Loose comparisons
+
+[`comparisons.json`](comparisons.json) records equality outcomes for PHP 5,
+7 and 8. The shared comparison engine and reference runtime exports use
+these expectations; LSP tests independently check branch types, strict
+controls, `in_array()` and `switch`. Exports named `comparisons-5.5.json`
+and `comparisons-5.6.json` run in the pinned runtime CI jobs.
+
+PHP 5 accepts hexadecimal numeric strings; PHP 7 removes that behavior.
+PHP 8 changes number/string comparison and accepts trailing whitespace
+in numeric strings. See the official [PHP 7 migration guide](https://www.php.net/manual/en/migration70.incompatible.php)
+and [PHP 8 comparison RFC](https://wiki.php.net/rfc/string_to_number_comparison).
+Where 32-bit and 64-bit PHP 5 integers give different answers, analysis
+keeps both possibilities because the project target does not specify an
+architecture. Non-finite or unrepresentable values also remain uncertain.
+
 ## Legacy source forms
 
 The source tests cover legacy identifiers, offsets and comments, mixed HTML,

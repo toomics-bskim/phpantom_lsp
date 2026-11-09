@@ -369,10 +369,8 @@ pub(super) fn is_single_value(ty: &PhpType) -> bool {
 /// equals, and the `default` arm (`matched` empty) drops the ones any label
 /// in `excluded` equals.  `"foo"|"bar"` is `'foo'` under `case "foo":`.
 ///
-/// Alternatives that are not literals stay: a `string` holds values no
-/// label mentions, and whether `null` or a `bool` equals a label is a
-/// question this does not try to answer.  A `matched` label that is not a
-/// literal could be any value, so it leaves the subject alone.
+/// Scalar coercion and broad-type refinement use the same target rules as
+/// an `if`. A `matched` label with an unknown value leaves the subject alone.
 pub(crate) fn apply_switch_arm_narrowing(
     subject: &Expression<'_>,
     matched: &[&Expression<'_>],
@@ -387,7 +385,7 @@ pub(crate) fn apply_switch_arm_narrowing(
         labels
             .iter()
             .filter_map(|label| literal_comparand_type(label))
-            .filter(|ty| ty.as_literal().is_some())
+            .filter(loose_equality::is_loose_comparand)
             .collect()
     };
     let (labels, keep_equal) = if matched.is_empty() {
@@ -402,20 +400,14 @@ pub(crate) fn apply_switch_arm_narrowing(
     if labels.is_empty() {
         return;
     }
-    let keep = |member: &LiteralValue| {
-        let equal = labels.iter().filter_map(PhpType::as_literal).any(|label| {
-            // An unreadable value might be equal, and might not be.
-            member.loosely_equals(label).unwrap_or(keep_equal)
-        });
-        equal == keep_equal
-    };
-
-    // `switch ($x['type'])` discriminates the shapes `$x` can be, which is
-    // only visible once the offset has a type of its own to narrow.
-    if condition_facts::split_trailing_bracket(&var_name).is_some() {
-        seed_synthetic_key_if_needed(&var_name, scope, ctx);
-    }
-    retain_literals_in_scope(&var_name, scope, &keep, None);
+    let semantics = crate::parser::source_comparison_semantics();
+    loose_equality::refine_subject(&var_name, scope, ctx, |ty| {
+        if keep_equal {
+            loose_equality::loosely_equal_part(ty, &labels, semantics)
+        } else {
+            loose_equality::loosely_unequal_part(ty, &labels, semantics)
+        }
+    });
 }
 
 /// Narrow a subject whose alternatives include number literals by an

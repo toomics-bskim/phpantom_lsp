@@ -96,7 +96,7 @@ hint; it is not evidence of support for the later primitive type.
 
 ## Delivery order
 
-Each numbered item is one implementation task and one PR. LP10–LP17
+Each numbered item is one implementation task and one PR. LP11–LP17
 address the remaining semantic and inference gaps. LP20 covers constructor
 access and explicit calls.
 LP19 covers the remaining edit producers; LP18 qualifies the final support
@@ -106,22 +106,6 @@ items can move into scheduled sprints without changing their scope.
 Reproduced defects should receive GitHub issues with the audit sample
 and target version attached. This
 document records the work; it does not imply issues have been opened.
-
-## LP10. Loose comparisons narrow by the target semantics
-
-**Impact: High · Complexity: High**
-
-**Evidence.** With a `0|'foo'` parameter, the `== 'foo'` branch narrows to
-`'foo'`, although both runtimes also enter it for `0`.
-`php_type/literal.rs::loosely_equals` explicitly applies PHP 8 rules.
-
-**Plan.** Make literal comparison and every narrowing consumer share the
-target's coercion rules, including switch cases, negated conditions,
-numeric strings, booleans, and null. Keep strict comparison unchanged.
-
-**Done when.** Runtime-reachable values are never excluded by narrowing,
-and positive/negative tests cover PHP 5 and PHP 8 differences without
-weakening unrelated diagnostics.
 
 ## LP11. Resolve legacy dynamic variable binding
 
@@ -294,7 +278,7 @@ Runtime fixtures distinguish explicit scope calls from ordinary arrow calls.
 
 ## LP18. Qualify and document the support contract
 
-**Impact: High · Complexity: Medium · Depends on: LP10–LP17, LP19, LP20**
+**Impact: High · Complexity: Medium · Depends on: LP11–LP17, LP19, LP20**
 
 **Plan.** Expand the regression matrix to remaining language and LSP
 surfaces before claiming full support: include/require and manual

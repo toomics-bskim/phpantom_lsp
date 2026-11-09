@@ -205,7 +205,6 @@ source syntax, runtime semantics, built-ins, and editor behavior.
 
 | # | Item | Impact | Complexity |
 | --- | --- | --- | --- |
-| LP10 | [Loose comparisons narrow by the target semantics](todo/legacy-php.md#lp10-loose-comparisons-narrow-by-the-target-semantics) | High | High |
 | LP11 | [Resolve legacy dynamic variable binding](todo/legacy-php.md#lp11-resolve-legacy-dynamic-variable-binding) | Medium-High | High |
 | LP12 | [Destructuring updates append targets in runtime order](todo/legacy-php.md#lp12-destructuring-updates-append-targets-in-runtime-order) | Medium-High | High |
 | LP13 | [Legacy constant lookup preserves name rules](todo/legacy-php.md#lp13-legacy-constant-lookup-preserves-name-rules) | Medium | Medium-High |

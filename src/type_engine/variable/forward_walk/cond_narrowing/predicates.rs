@@ -54,7 +54,9 @@ fn extract_sentinel_check_by(
     );
     let not_equal = matches!(
         bin.operator,
-        BinaryOperator::NotIdentical(_) | BinaryOperator::NotEqual(_)
+        BinaryOperator::NotIdentical(_)
+            | BinaryOperator::NotEqual(_)
+            | BinaryOperator::AngledNotEqual(_)
     );
     let wanted = match sentinel {
         Sentinel::Is => equal && !negated,
@@ -178,7 +180,7 @@ pub(crate) fn is_loose_comparison(expr: &Expression<'_>) -> bool {
     matches!(
         condition_facts::unwrap_condition_negation(expr).0,
         Expression::Binary(bin)
-            if matches!(bin.operator, BinaryOperator::Equal(_) | BinaryOperator::NotEqual(_))
+            if matches!(bin.operator, BinaryOperator::Equal(_) | BinaryOperator::NotEqual(_) | BinaryOperator::AngledNotEqual(_))
     )
 }
 

@@ -137,6 +137,7 @@ fn is_condition_shaped(expr: &Expression<'_>) -> bool {
                 | BinaryOperator::NotIdentical(_)
                 | BinaryOperator::Equal(_)
                 | BinaryOperator::NotEqual(_)
+                | BinaryOperator::AngledNotEqual(_)
                 | BinaryOperator::LessThan(_)
                 | BinaryOperator::LessThanOrEqual(_)
                 | BinaryOperator::GreaterThan(_)

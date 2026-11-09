@@ -2216,6 +2216,10 @@ function runDemoAssertions(): void
     assert($unused->sorted([3, 1, 2]) === [1, 2, 3], 'usort() calls compare() through the callable array');
     assert($unused->bill(7) === 'N-7', 'nothing writes $discount, so it adds nothing');
 
+    $loose = new LooseComparisonDemo();
+    assert($loose->select('foo') === 'foo');
+    assert($loose->select(0) === (PHP_VERSION_ID < 80000 ? 0 : null));
+    assert($loose->select(1) === null);
     echo "All assertions passed.\n";
 }
 

@@ -366,13 +366,11 @@ pub(crate) fn switch_covers_every_value_at(
             SwitchCase::Default(_) => None,
         })
         .collect();
+    let semantics = crate::parser::source_comparison_semantics();
     subject.union_members().iter().all(|member| {
-        member.as_literal().is_some_and(|value| {
-            labels
-                .iter()
-                .filter_map(PhpType::as_literal)
-                .any(|label| value.loosely_equals(label) == Some(true))
-        })
+        labels
+            .iter()
+            .any(|label| semantics.values_equal(member, label) == Some(true))
     })
 }
 

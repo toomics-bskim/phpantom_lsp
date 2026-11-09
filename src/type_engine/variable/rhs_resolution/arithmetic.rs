@@ -773,6 +773,17 @@ fn fold_literal_comparison(
     rhs_types: &[ResolvedType],
 ) -> Option<bool> {
     use std::cmp::Ordering;
+    if matches!(
+        operator,
+        BinaryOperator::Equal(_) | BinaryOperator::NotEqual(_) | BinaryOperator::AngledNotEqual(_)
+    ) {
+        let ([left], [right]) = (lhs_types, rhs_types) else {
+            return None;
+        };
+        let equal = crate::parser::source_comparison_semantics()
+            .values_equal(&left.type_string, &right.type_string)?;
+        return Some(equal == matches!(operator, BinaryOperator::Equal(_)));
+    }
     let lhs = single_literal_number(lhs_types)?;
     let rhs = single_literal_number(rhs_types)?;
     let ordering = match (lhs, rhs) {
@@ -790,10 +801,6 @@ fn fold_literal_comparison(
         BinaryOperator::LessThanOrEqual(_) => ordering != Ordering::Greater,
         BinaryOperator::GreaterThan(_) => ordering == Ordering::Greater,
         BinaryOperator::GreaterThanOrEqual(_) => ordering != Ordering::Less,
-        BinaryOperator::Equal(_) => ordering == Ordering::Equal,
-        BinaryOperator::NotEqual(_) | BinaryOperator::AngledNotEqual(_) => {
-            ordering != Ordering::Equal
-        }
         BinaryOperator::Identical(_) => same_kind && ordering == Ordering::Equal,
         BinaryOperator::NotIdentical(_) => !same_kind || ordering != Ordering::Equal,
         _ => return None,

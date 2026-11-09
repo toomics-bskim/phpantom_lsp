@@ -14,6 +14,18 @@ pub(crate) fn source_version() -> PHPVersion {
     SOURCE_VERSION.get()
 }
 
+/// Runtime comparison rules for the source currently being analysed.
+pub(crate) fn source_comparison_semantics() -> crate::php_type::ComparisonSemantics {
+    let version = source_version();
+    if version < PHPVersion::PHP70 {
+        crate::php_type::ComparisonSemantics::Php5
+    } else if version < PHPVersion::PHP80 {
+        crate::php_type::ComparisonSemantics::Php7
+    } else {
+        crate::php_type::ComparisonSemantics::Php8
+    }
+}
+
 /// Share the active grammar between the initial parse and recovery attempts.
 pub(crate) fn source_settings() -> ParserSettings {
     ParserSettings {

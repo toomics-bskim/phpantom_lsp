@@ -315,6 +315,7 @@ pub(crate) fn collect_condition_property_keys_inner(expr: &Expression<'_>, keys:
                     | BinaryOperator::Equal(_)
                     | BinaryOperator::NotIdentical(_)
                     | BinaryOperator::NotEqual(_)
+                    | BinaryOperator::AngledNotEqual(_)
             ) =>
         {
             for side in [bin.lhs, bin.rhs] {
@@ -460,6 +461,7 @@ pub(crate) fn seed_call_subject_keys(
                     | BinaryOperator::NotIdentical(_)
                     | BinaryOperator::Equal(_)
                     | BinaryOperator::NotEqual(_)
+                    | BinaryOperator::AngledNotEqual(_)
             ) =>
         {
             seed_call_subject(bin.lhs, scope, ctx);

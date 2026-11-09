@@ -120,31 +120,7 @@ impl LiteralValue {
     /// PHP 8 compares the two as strings and a number's string form is
     /// numeric.
     pub fn loosely_equals(&self, other: &LiteralValue) -> Option<bool> {
-        let numeric = |value: &LiteralValue| -> Option<f64> {
-            match value {
-                LiteralValue::Int(_) => value.parse_i64().map(|n| n as f64),
-                LiteralValue::Float(_) => value.parse_f64(),
-                LiteralValue::String(_) => {
-                    let content = value.string_content()?;
-                    is_php_numeric_string(&content)
-                        .then(|| content.trim().parse().ok())
-                        .flatten()
-                }
-            }
-        };
-        match (self, other) {
-            (LiteralValue::Int(_), LiteralValue::Int(_)) => {
-                Some(self.parse_i64()? == other.parse_i64()?)
-            }
-            (LiteralValue::String(_), LiteralValue::String(_))
-                if !self.is_numeric_string() || !other.is_numeric_string() =>
-            {
-                Some(self.string_content()? == other.string_content()?)
-            }
-            (LiteralValue::String(_), _) if !self.is_numeric_string() => Some(false),
-            (_, LiteralValue::String(_)) if !other.is_numeric_string() => Some(false),
-            _ => Some(numeric(self)? == numeric(other)?),
-        }
+        super::ComparisonSemantics::Php8.literals_equal(self, other)
     }
 }
 

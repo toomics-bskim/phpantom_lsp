@@ -598,7 +598,9 @@ fn try_extract_class_identity_check<'b>(
     if let Expression::Binary(bin) = expr {
         let negated = match &bin.operator {
             BinaryOperator::Identical(_) | BinaryOperator::Equal(_) => false,
-            BinaryOperator::NotIdentical(_) | BinaryOperator::NotEqual(_) => true,
+            BinaryOperator::NotIdentical(_)
+            | BinaryOperator::NotEqual(_)
+            | BinaryOperator::AngledNotEqual(_) => true,
             _ => return None,
         };
         // Try both orders: class-check == ClassName::class and
