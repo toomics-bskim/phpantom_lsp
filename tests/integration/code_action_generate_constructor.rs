@@ -11,6 +11,42 @@ use crate::common::{
 };
 use tower_lsp_server::gen_lsp_types::*;
 
+#[test]
+fn legacy_constructor_keeps_unsupported_parameter_types_in_phpdoc() {
+    use phpantom_lsp::types::PhpVersion;
+
+    let uri =
+        crate::common::file_uri(&std::env::temp_dir().join("phpantom-legacy-constructor.php"));
+    let content = "<?php\nclass LegacyConstructor {\n    /** @var string */\n    public $name;\n    /** @var array */\n    public $items;\n    /** @var \\DateTime */\n    public $clock;\n    /** @var ?string */\n    public $label;\n}\n";
+    for (major, minor) in [(5, 5), (5, 6), (7, 0), (7, 1)] {
+        let backend = create_test_backend();
+        backend.set_php_version(PhpVersion::new(major, minor));
+        let actions = get_code_actions_at(&backend, &uri, content, 3, 12);
+        let action = find_action_titled(&actions, "Generate constructor").unwrap();
+        let edited = apply_workspace_edit(content, action.edit.as_ref().unwrap());
+        assert!(edited.contains("array $items"), "{edited}");
+        assert!(edited.contains("\\DateTime $clock"), "{edited}");
+        if major < 7 {
+            assert!(edited.contains("@param string $name"), "{edited}");
+            assert!(
+                edited.contains("__construct($name, array $items"),
+                "{edited}"
+            );
+        } else {
+            assert!(
+                edited.contains("__construct(string $name, array $items"),
+                "{edited}"
+            );
+        }
+        if major < 7 || minor == 0 {
+            assert!(edited.contains("@param ?string $label"), "{edited}");
+            assert!(!edited.contains(", ?string $label"), "{edited}");
+        } else {
+            assert!(edited.contains(", ?string $label"), "{edited}");
+        }
+    }
+}
+
 // ── Basic generation ────────────────────────────────────────────────────────
 
 #[test]

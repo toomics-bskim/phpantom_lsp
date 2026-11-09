@@ -618,6 +618,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Code actions
 
+- **Generated constructors and accessors respect the PHP target.** PHP 5.5 and 5.6 keep unsupported type declarations in PHPDoc. Constructor promotion and property hooks are only offered on PHP versions that support them.
+
 - **"Replace with" no longer leaves a stray parenthesis.** Replacing a call to a deprecated function or method now replaces its closing parenthesis too, instead of leaving an extra `)` behind.
 - **Filtered code action menus.** When the editor asks for one kind of code action, such as only quick fixes or only the organize-imports action run on save, only actions of that kind are returned instead of every action mixed together. Every kind of action PHPantom offers is now listed among the kinds it advertises.
 - **Generated property hooks follow the file's indentation.** "Generate get hook" and "Generate set hook" indent the new hooks by two spaces in a file indented with two spaces, instead of always using four.

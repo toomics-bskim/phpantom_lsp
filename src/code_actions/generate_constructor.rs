@@ -30,6 +30,7 @@ use crate::php_type::{PhpType, TypeKind};
 use crate::text_position::{
     byte_range_to_lsp_range, find_line_end, find_line_start, offset_to_position,
 };
+use crate::types::PhpVersion;
 
 // ── Data types ──────────────────────────────────────────────────────────────
 
@@ -122,7 +123,7 @@ impl Backend {
 
         // ── Traditional constructor ─────────────────────────────────────
         {
-            let constructor_text = build_constructor(&props, &indent);
+            let constructor_text = build_constructor(&props, &indent, self.php_version());
 
             let edit = TextEdit {
                 range: Range {
@@ -149,7 +150,7 @@ impl Backend {
         }
 
         // ── Promoted constructor ────────────────────────────────────────
-        {
+        if self.php_version().supports_promoted_properties() {
             let constructor_text = build_promoted_constructor(&props, &indent);
 
             // Build the list of edits: one deletion per property
@@ -364,10 +365,21 @@ fn find_insertion_offset<'a>(members: &Sequence<'a, ClassLikeMember<'a>>, conten
 /// Build the traditional constructor source text from the qualifying
 /// properties.  Each property becomes a parameter with matching type
 /// hint and an assignment in the body.
-fn build_constructor(props: &[QualifyingProperty], indent: &str) -> String {
+fn build_constructor(props: &[QualifyingProperty], indent: &str, version: PhpVersion) -> String {
     let mut result = String::new();
 
     result.push('\n');
+    let tags: Vec<String> = props
+        .iter()
+        .filter_map(|prop| {
+            let hint = prop.type_hint.as_ref()?;
+            (!parameter_hint_available(hint, version))
+                .then(|| format!("@param {hint} ${}", prop.name))
+        })
+        .collect();
+    if !tags.is_empty() {
+        result.push_str(&super::render_docblock(indent, &tags, "\n"));
+    }
     result.push_str(indent);
     result.push_str("public function __construct(");
 
@@ -376,8 +388,10 @@ fn build_constructor(props: &[QualifyingProperty], indent: &str) -> String {
     // We preserve declaration order but PHP requires defaults at the end,
     // so we separate them.
     let params = required_first_params(props, |prop| match prop.type_hint {
-        Some(ref hint) => format!("{hint} ${}", prop.name),
-        None => format!("${}", prop.name),
+        Some(ref hint) if parameter_hint_available(hint, version) => {
+            format!("{hint} ${}", prop.name)
+        }
+        _ => format!("${}", prop.name),
     });
     result.push_str(&params.join(", "));
     result.push_str(")\n");
@@ -400,6 +414,35 @@ fn build_constructor(props: &[QualifyingProperty], indent: &str) -> String {
     result.push_str("}\n");
 
     result
+}
+
+/// A documented primitive must not become a class hint on an older target.
+fn parameter_hint_available(hint: &PhpType, version: PhpVersion) -> bool {
+    match hint.kind() {
+        TypeKind::Named(name) => match name.as_str() {
+            "void" | "never" | "static" => false,
+            "null" | "false" | "true" => version >= PhpVersion::new(8, 2),
+            "array" | "callable" | "bool" | "int" | "float" | "string" | "iterable" | "object"
+            | "mixed" => version.supports_builtin_type(name),
+            _ => true,
+        },
+        TypeKind::Nullable(inner) => {
+            version >= PhpVersion::new(7, 1) && parameter_hint_available(inner, version)
+        }
+        TypeKind::Union(members) => {
+            version >= PhpVersion::new(8, 0)
+                && members.iter().all(|member| match member.kind() {
+                    TypeKind::Named(name) if matches!(name.as_str(), "null" | "false") => true,
+                    TypeKind::Intersection(_) => {
+                        version >= PhpVersion::new(8, 2)
+                            && parameter_hint_available(member, version)
+                    }
+                    _ => parameter_hint_available(member, version),
+                })
+        }
+        TypeKind::Intersection(_) => version >= PhpVersion::new(8, 1),
+        _ => false,
+    }
 }
 
 /// One constructor parameter per property, rendered by `declare` with the
@@ -567,7 +610,7 @@ mod tests {
             prop("age", Some("int"), None),
         ];
 
-        let result = build_constructor(&props, "    ");
+        let result = build_constructor(&props, "    ", PhpVersion::default());
         assert!(result.contains("public function __construct(string $name, int $age)"));
         assert!(result.contains("$this->name = $name;"));
         assert!(result.contains("$this->age = $age;"));
@@ -580,7 +623,7 @@ mod tests {
             prop("status", Some("string"), Some("'active'")),
         ];
 
-        let result = build_constructor(&props, "    ");
+        let result = build_constructor(&props, "    ", PhpVersion::default());
         assert!(
             result.contains("string $name, string $status = 'active'"),
             "required params before optional: {result}"
@@ -594,7 +637,7 @@ mod tests {
             prop("name", Some("string"), None),
         ];
 
-        let result = build_constructor(&props, "    ");
+        let result = build_constructor(&props, "    ", PhpVersion::default());
         // Required parameter $name should come before optional $status.
         let name_pos = result.find("$name").unwrap();
         let status_pos = result.find("$status").unwrap();
@@ -608,7 +651,7 @@ mod tests {
     fn builds_constructor_without_type_hints() {
         let props = vec![prop("data", None, None)];
 
-        let result = build_constructor(&props, "    ");
+        let result = build_constructor(&props, "    ", PhpVersion::default());
         assert!(
             result.contains("($data)"),
             "untyped param should not have type: {result}"
@@ -619,7 +662,7 @@ mod tests {
     fn builds_constructor_with_nullable_type() {
         let props = vec![prop("label", Some("?string"), None)];
 
-        let result = build_constructor(&props, "    ");
+        let result = build_constructor(&props, "    ", PhpVersion::default());
         assert!(
             result.contains("?string $label"),
             "nullable type preserved: {result}"
@@ -630,7 +673,7 @@ mod tests {
     fn builds_constructor_with_union_type() {
         let props = vec![prop("id", Some("int|string"), None)];
 
-        let result = build_constructor(&props, "    ");
+        let result = build_constructor(&props, "    ", PhpVersion::default());
         assert!(
             result.contains("int|string $id"),
             "union type preserved: {result}"
@@ -641,7 +684,7 @@ mod tests {
     fn respects_tab_indentation() {
         let props = vec![prop("name", Some("string"), None)];
 
-        let result = build_constructor(&props, "\t");
+        let result = build_constructor(&props, "\t", PhpVersion::default());
         assert!(
             result.contains("\tpublic function __construct("),
             "should use tab indent: {result}"

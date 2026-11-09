@@ -35,6 +35,7 @@ use crate::docblock::{extract_var_type, get_docblock_text_for_node};
 use crate::parser::extract_hint_type;
 use crate::php_type::PhpType;
 use crate::text_position::{find_line_end, offset_to_position};
+use crate::types::PhpVersion;
 
 // ── Data types ──────────────────────────────────────────────────────────────
 
@@ -165,6 +166,7 @@ impl Backend {
 
         let any_can_getter = available.iter().any(|a| a.can_getter);
         let any_can_setter = available.iter().any(|a| a.can_setter);
+        let php_version = self.php_version();
 
         // One action per selection: getters, setters, or both, each over
         // every property that can still take one.
@@ -172,10 +174,10 @@ impl Backend {
             let mut methods_text = String::new();
             for avail in &available {
                 if getters && avail.can_getter {
-                    methods_text.push_str(&build_getter(&avail.prop, &indent));
+                    methods_text.push_str(&build_getter(&avail.prop, &indent, php_version));
                 }
                 if setters && avail.can_setter {
-                    methods_text.push_str(&build_setter(&avail.prop, &indent));
+                    methods_text.push_str(&build_setter(&avail.prop, &indent, php_version));
                 }
             }
 
@@ -317,14 +319,14 @@ fn is_bool_type(type_hint: Option<&PhpType>) -> bool {
 }
 
 /// Build the getter method source text for a property.
-fn build_getter(prop: &AccessorProperty, indent: &str) -> String {
+fn build_getter(prop: &AccessorProperty, indent: &str, php_version: PhpVersion) -> String {
     let mut result = String::new();
     let method_name = getter_method_name(&prop.name, prop.type_hint.as_ref());
 
     result.push('\n');
 
-    // If the type came from a docblock, add a @return tag.
-    if prop.type_from_docblock
+    // Preserve a documented type, or one the target cannot declare natively.
+    if (prop.type_from_docblock || !php_version.supports_return_types())
         && let Some(ref hint) = prop.type_hint
     {
         result.push_str(&render_docblock(indent, &[format!("@return {hint}")], "\n"));
@@ -342,6 +344,7 @@ fn build_getter(prop: &AccessorProperty, indent: &str) -> String {
 
     // Add native return type if we have a non-docblock type.
     if !prop.type_from_docblock
+        && php_version.supports_return_types()
         && let Some(ref hint) = prop.type_hint
     {
         result.push_str(": ");
@@ -371,23 +374,31 @@ fn build_getter(prop: &AccessorProperty, indent: &str) -> String {
 
 /// Build the setter method source text for a property.
 ///
-/// The setter returns `$this` (or `static` for static) for fluent chaining,
-/// with a return type of `self`.
-fn build_setter(prop: &AccessorProperty, indent: &str) -> String {
+/// An instance setter returns `$this` for fluent chaining; a static setter
+/// returns nothing. Targets without the native return type use PHPDoc.
+fn build_setter(prop: &AccessorProperty, indent: &str, php_version: PhpVersion) -> String {
     let mut result = String::new();
     let method_name = setter_method_name(&prop.name);
 
     result.push('\n');
 
-    // If the type came from a docblock, add a @param tag.
+    let native_return = if prop.is_static {
+        php_version.supports_void_return_type()
+    } else {
+        php_version.supports_return_types()
+    };
+    let return_type = if prop.is_static { "void" } else { "self" };
+    let mut tags = Vec::new();
     if prop.type_from_docblock
         && let Some(ref hint) = prop.type_hint
     {
-        result.push_str(&render_docblock(
-            indent,
-            &[format!("@param {hint} ${}", prop.name)],
-            "\n",
-        ));
+        tags.push(format!("@param {hint} ${}", prop.name));
+    }
+    if !native_return {
+        tags.push(format!("@return {return_type}"));
+    }
+    if !tags.is_empty() {
+        result.push_str(&render_docblock(indent, &tags, "\n"));
     }
 
     result.push_str(indent);
@@ -408,11 +419,10 @@ fn build_setter(prop: &AccessorProperty, indent: &str) -> String {
     }
     result.push('$');
     result.push_str(&prop.name);
-    result.push_str("): ");
-    if prop.is_static {
-        result.push_str("void");
-    } else {
-        result.push_str("self");
+    result.push(')');
+    if native_return {
+        result.push_str(": ");
+        result.push_str(return_type);
     }
 
     result.push('\n');
@@ -602,7 +612,7 @@ mod tests {
     #[test]
     fn builds_simple_getter() {
         let prop = make_prop("name", Some("string"), false, false, false);
-        let result = build_getter(&prop, "    ");
+        let result = build_getter(&prop, "    ", PhpVersion::default());
         assert!(
             result.contains("public function getName(): string"),
             "getter signature: {result}"
@@ -616,7 +626,7 @@ mod tests {
     #[test]
     fn builds_bool_getter_with_is_prefix() {
         let prop = make_prop("active", Some("bool"), false, false, false);
-        let result = build_getter(&prop, "    ");
+        let result = build_getter(&prop, "    ", PhpVersion::default());
         assert!(
             result.contains("public function isActive(): bool"),
             "bool getter uses is prefix: {result}"
@@ -626,7 +636,7 @@ mod tests {
     #[test]
     fn builds_getter_without_type() {
         let prop = make_prop("data", None, false, false, false);
-        let result = build_getter(&prop, "    ");
+        let result = build_getter(&prop, "    ", PhpVersion::default());
         assert!(
             result.contains("public function getData()"),
             "no return type: {result}"
@@ -640,7 +650,7 @@ mod tests {
     #[test]
     fn builds_getter_with_nullable_type() {
         let prop = make_prop("label", Some("?string"), false, false, false);
-        let result = build_getter(&prop, "    ");
+        let result = build_getter(&prop, "    ", PhpVersion::default());
         assert!(
             result.contains("public function getLabel(): ?string"),
             "nullable return type: {result}"
@@ -650,7 +660,7 @@ mod tests {
     #[test]
     fn builds_getter_with_union_type() {
         let prop = make_prop("id", Some("int|string"), false, false, false);
-        let result = build_getter(&prop, "    ");
+        let result = build_getter(&prop, "    ", PhpVersion::default());
         assert!(
             result.contains("public function getId(): int|string"),
             "union return type: {result}"
@@ -660,7 +670,7 @@ mod tests {
     #[test]
     fn builds_static_getter() {
         let prop = make_prop("count", Some("int"), false, false, true);
-        let result = build_getter(&prop, "    ");
+        let result = build_getter(&prop, "    ", PhpVersion::default());
         assert!(
             result.contains("public static function getCount(): int"),
             "static getter: {result}"
@@ -674,7 +684,7 @@ mod tests {
     #[test]
     fn builds_getter_with_docblock_type() {
         let prop = make_prop("items", Some("Collection<User>"), true, false, false);
-        let result = build_getter(&prop, "    ");
+        let result = build_getter(&prop, "    ", PhpVersion::default());
         assert!(
             result.contains("@return Collection<User>"),
             "docblock return tag: {result}"
@@ -692,7 +702,7 @@ mod tests {
     #[test]
     fn getter_respects_tab_indentation() {
         let prop = make_prop("name", Some("string"), false, false, false);
-        let result = build_getter(&prop, "\t");
+        let result = build_getter(&prop, "\t", PhpVersion::default());
         assert!(
             result.contains("\tpublic function getName(): string"),
             "tab indent on signature: {result}"
@@ -708,7 +718,7 @@ mod tests {
     #[test]
     fn builds_simple_setter() {
         let prop = make_prop("name", Some("string"), false, false, false);
-        let result = build_setter(&prop, "    ");
+        let result = build_setter(&prop, "    ", PhpVersion::default());
         assert!(
             result.contains("public function setName(string $name): self"),
             "setter signature: {result}"
@@ -726,7 +736,7 @@ mod tests {
     #[test]
     fn builds_setter_without_type() {
         let prop = make_prop("data", None, false, false, false);
-        let result = build_setter(&prop, "    ");
+        let result = build_setter(&prop, "    ", PhpVersion::default());
         assert!(
             result.contains("public function setData($data): self"),
             "untyped setter: {result}"
@@ -736,7 +746,7 @@ mod tests {
     #[test]
     fn builds_setter_with_nullable_type() {
         let prop = make_prop("label", Some("?string"), false, false, false);
-        let result = build_setter(&prop, "    ");
+        let result = build_setter(&prop, "    ", PhpVersion::default());
         assert!(
             result.contains("public function setLabel(?string $label): self"),
             "nullable param: {result}"
@@ -746,7 +756,7 @@ mod tests {
     #[test]
     fn builds_setter_with_union_type() {
         let prop = make_prop("id", Some("int|string"), false, false, false);
-        let result = build_setter(&prop, "    ");
+        let result = build_setter(&prop, "    ", PhpVersion::default());
         assert!(
             result.contains("public function setId(int|string $id): self"),
             "union param: {result}"
@@ -756,7 +766,7 @@ mod tests {
     #[test]
     fn builds_static_setter() {
         let prop = make_prop("count", Some("int"), false, false, true);
-        let result = build_setter(&prop, "    ");
+        let result = build_setter(&prop, "    ", PhpVersion::default());
         assert!(
             result.contains("public static function setCount(int $count): void"),
             "static setter returns void: {result}"
@@ -774,7 +784,7 @@ mod tests {
     #[test]
     fn builds_setter_with_docblock_type() {
         let prop = make_prop("items", Some("Collection<User>"), true, false, false);
-        let result = build_setter(&prop, "    ");
+        let result = build_setter(&prop, "    ", PhpVersion::default());
         assert!(
             result.contains("@param Collection<User> $items"),
             "docblock param tag: {result}"
@@ -788,7 +798,7 @@ mod tests {
     #[test]
     fn setter_respects_tab_indentation() {
         let prop = make_prop("name", Some("string"), false, false, false);
-        let result = build_setter(&prop, "\t");
+        let result = build_setter(&prop, "\t", PhpVersion::default());
         assert!(
             result.contains("\tpublic function setName(string $name): self"),
             "tab indent on signature: {result}"

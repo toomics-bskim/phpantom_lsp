@@ -221,6 +221,21 @@ class GenerateGetterSetterDemo
     public $tags;
 }
 
+// Try: set [php] version = "5.5" or "5.6" in .phpantom.toml and request
+// "Generate constructor" or "Generate getter and setter" on $name below.
+// Types stay in PHPDoc where native declarations are unavailable. The setter
+// returns $this for chaining. "Generate promoted constructor" requires PHP
+// 8.0, and property hook actions require PHP 8.4. Restore the playground's
+// modern target afterward; its other demos use newer syntax.
+class LegacyGenerationDemo
+{
+    /** @var string */
+    public $name = '';
+
+    /** @var int */
+    public static $count = 0;
+}
+
 
 // ── Generate Property Hooks (Code Action, PHP 8.4+) ────────────────────────
 // Place the cursor on a property declaration below and trigger "Code Action"

@@ -32,6 +32,10 @@ final class RequireExtendsConsumer extends Scaffolding\RequireExtendsTestCase
 
 function runDemoAssertions(): void
 {
+    $legacyGeneration = new LegacyGenerationDemo();
+    assert(is_string($legacyGeneration->name));
+    assert(is_int(LegacyGenerationDemo::$count));
+
     // ── Body Return Type Inference ──────────────────────────────────────
     $factory = new Scaffolding\ScaffoldingUntypedFactory();
     $pen = $factory->createPen();

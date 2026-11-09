@@ -16,6 +16,83 @@ use crate::common::{
 };
 use tower_lsp_server::gen_lsp_types::*;
 
+#[test]
+fn legacy_generation_actions_follow_language_boundaries() {
+    use crate::common::apply_workspace_edit;
+    use phpantom_lsp::types::PhpVersion;
+
+    let uri = crate::common::file_uri(&std::env::temp_dir().join("phpantom-legacy-accessors.php"));
+    let content =
+        "<?php\r\nclass LegacyAccessors {\r\n    /** @var string */\r\n    private $name;\r\n}\r\n";
+    for (major, minor, promoted, hooks) in [
+        (5, 5, false, false),
+        (5, 6, false, false),
+        (7, 0, false, false),
+        (7, 1, false, false),
+        (7, 4, false, false),
+        (8, 0, true, false),
+        (8, 3, true, false),
+        (8, 4, true, true),
+    ] {
+        let backend = create_test_backend();
+        backend.set_php_version(PhpVersion::new(major, minor));
+        let pos = position_of(content, "$name");
+        let actions = get_code_actions_in_range(&backend, &uri, content, Range::new(pos, pos));
+        assert!(find_action_titled(&actions, "Generate constructor").is_some());
+        assert_eq!(
+            find_action_titled(&actions, "Generate promoted constructor").is_some(),
+            promoted,
+            "PHP {major}.{minor}"
+        );
+        for title in [
+            "Generate get hook",
+            "Generate set hook",
+            "Generate get and set hooks",
+        ] {
+            assert_eq!(
+                find_action_titled(&actions, title).is_some(),
+                hooks,
+                "{title}: PHP {major}.{minor}"
+            );
+        }
+        let action = find_action_titled(&actions, "Generate getter and setter").unwrap();
+        let edited = apply_workspace_edit(content, action.edit.as_ref().unwrap());
+        assert!(edited.contains("@return string"), "{edited}");
+        assert!(edited.contains("@param string $name"), "{edited}");
+        assert!(edited.contains("return $this;"), "{edited}");
+        if major < 7 {
+            assert!(edited.contains("@return self"), "{edited}");
+            assert!(!edited.contains("): "), "{edited}");
+        } else {
+            assert!(edited.contains("function setName($name): self"), "{edited}");
+        }
+    }
+}
+
+#[test]
+fn legacy_static_setter_uses_docblock_until_void_is_available() {
+    use crate::common::apply_workspace_edit;
+    use phpantom_lsp::types::PhpVersion;
+
+    let uri =
+        crate::common::file_uri(&std::env::temp_dir().join("phpantom-legacy-static-setter.php"));
+    let content =
+        "<?php\nclass StaticAccessors {\n    /** @var int */\n    private static $count;\n}\n";
+    for (major, minor, native_void) in [(5, 5, false), (5, 6, false), (7, 0, false), (7, 1, true)] {
+        let backend = create_test_backend();
+        backend.set_php_version(PhpVersion::new(major, minor));
+        let pos = position_of(content, "$count");
+        let actions = get_code_actions_in_range(&backend, &uri, content, Range::new(pos, pos));
+        let action = find_action_titled(&actions, "Generate setter").unwrap();
+        let edited = apply_workspace_edit(content, action.edit.as_ref().unwrap());
+        assert!(edited.contains("@param int $count"), "{edited}");
+        assert!(edited.contains("self::$count = $count;"), "{edited}");
+        assert_eq!(edited.contains("): void"), native_void, "{edited}");
+        assert_eq!(edited.contains("@return void"), !native_void, "{edited}");
+        assert!(!edited.contains("return $this;"), "{edited}");
+    }
+}
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /// The titles of the getter/setter actions among `actions`, for

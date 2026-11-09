@@ -198,6 +198,32 @@ ships, remove every row that names it.
 | L10 | [`RedirectResponse::withX()` dynamic methods](todo/laravel.md#l10-redirectresponsewithx-dynamic-methods)                                                                  | Low         | Medium      |
 | L39 | [Unused view and translation key detection](todo/laravel.md#l39-unused-view-and-translation-key-detection)                                                                  | Low         | Medium      |
 
+## PHP 5.5 & 5.6
+
+[Compatibility baseline and delivery order](todo/legacy-php.md) cover
+source syntax, runtime semantics, built-ins, and editor behavior.
+
+| # | Item | Impact | Complexity |
+| --- | --- | --- | --- |
+| LP1 | [Versioned compatibility regression fixtures](todo/legacy-php.md#lp1-versioned-compatibility-regression-fixtures) | High | Medium |
+| LP3 | [Formatting preserves legacy expression semantics](todo/legacy-php.md#lp3-formatting-preserves-legacy-expression-semantics) | Critical | High |
+| LP4 | [Target selection and version changes have one contract](todo/legacy-php.md#lp4-target-selection-and-version-changes-have-one-contract) | High | Medium-High |
+| LP5 | [Built-in symbols obey introduction and removal versions](todo/legacy-php.md#lp5-built-in-symbols-obey-introduction-and-removal-versions) | High | Medium-High |
+| LP6 | [Legacy source forms parse with correct spans](todo/legacy-php.md#lp6-legacy-source-forms-parse-with-correct-spans) | High | High |
+| LP7 | [Report syntax unavailable at the selected version](todo/legacy-php.md#lp7-report-syntax-unavailable-at-the-selected-version) | High | Medium-High |
+| LP8 | [Native type hints retain PHP 5 class-name meaning](todo/legacy-php.md#lp8-native-type-hints-retain-php-5-class-name-meaning) | High | High |
+| LP9 | [Class-name constructors participate in call resolution](todo/legacy-php.md#lp9-class-name-constructors-participate-in-call-resolution) | High | Medium-High |
+| LP10 | [Loose comparisons narrow by the target semantics](todo/legacy-php.md#lp10-loose-comparisons-narrow-by-the-target-semantics) | High | High |
+| LP11 | [Resolve legacy dynamic variable binding](todo/legacy-php.md#lp11-resolve-legacy-dynamic-variable-binding) | Medium-High | High |
+| LP12 | [Destructuring updates append targets in runtime order](todo/legacy-php.md#lp12-destructuring-updates-append-targets-in-runtime-order) | Medium-High | High |
+| LP13 | [Legacy constant lookup preserves name rules](todo/legacy-php.md#lp13-legacy-constant-lookup-preserves-name-rules) | Medium | Medium-High |
+| LP14 | [Built-in argument and return contracts match PHP 5](todo/legacy-php.md#lp14-built-in-argument-and-return-contracts-match-php-5) | High | Medium-High |
+| LP15 | [Returned closures retain their bound receiver type](todo/legacy-php.md#lp15-returned-closures-retain-their-bound-receiver-type) | Medium | High |
+| LP16 | [Unannotated generators infer yielded values](todo/legacy-php.md#lp16-unannotated-generators-infer-yielded-values) | Medium | High |
+| LP17 | [Variadic and unpacked calls carry argument types](todo/legacy-php.md#lp17-variadic-and-unpacked-calls-carry-argument-types) | Medium-High | High |
+| LP19 | [Remaining generated edits respect the target language](todo/legacy-php.md#lp19-remaining-generated-edits-respect-the-target-language) | High | Medium-High |
+| LP18 | [Qualify and document the support contract](todo/legacy-php.md#lp18-qualify-and-document-the-support-contract) | High | Medium |
+
 ## Type Inference
 
 | #   | Item                                                                                                                                                                        | Impact      | Complexity  |

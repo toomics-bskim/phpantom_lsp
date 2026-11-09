@@ -1,9 +1,10 @@
-//! The PHP version the project targets, used to pick the stub variant
-//! that applies to it.
+//! The PHP version the project targets, used for stub variants and
+//! language capabilities. Promotion and property-hook capability checks
+//! are adapted from PHPStan; see THIRD_PARTY_NOTICES.md.
 
 use super::*;
 
-/// A PHP major.minor version used for version-aware stub filtering.
+/// A PHP major.minor version used for stub filtering and language capabilities.
 ///
 /// phpstorm-stubs annotate functions, methods, and parameters with
 /// `#[PhpStormStubsElementAvailable(from: 'X.Y', to: 'X.Y')]` attributes
@@ -25,6 +26,45 @@ impl PhpVersion {
     /// Create a new `PhpVersion`.
     pub const fn new(major: u8, minor: u8) -> Self {
         Self { major, minor }
+    }
+
+    /// Whether functions may declare a native return type.
+    pub fn supports_return_types(self) -> bool {
+        self >= Self::new(7, 0)
+    }
+
+    /// Whether a native return declaration may use `void`.
+    pub fn supports_void_return_type(self) -> bool {
+        self >= Self::new(7, 1)
+    }
+
+    /// Whether constructor parameters may declare properties.
+    pub fn supports_promoted_properties(self) -> bool {
+        self >= Self::new(8, 0)
+    }
+
+    /// Whether properties may declare `get` and `set` hooks.
+    pub fn supports_property_hooks(self) -> bool {
+        self >= Self::new(8, 4)
+    }
+
+    /// Whether a lowercase native type name has its built-in meaning at this version.
+    /// Class names and PHPDoc-only types are not built-in native types.
+    /// The introduction versions are adapted from nikic/PHP-Parser;
+    /// see THIRD_PARTY_NOTICES.md.
+    pub fn supports_builtin_type(self, name: &str) -> bool {
+        let minimum = match name {
+            "array" => Self::new(5, 1),
+            "callable" => Self::new(5, 4),
+            "bool" | "int" | "float" | "string" => Self::new(7, 0),
+            "iterable" | "void" => Self::new(7, 1),
+            "object" => Self::new(7, 2),
+            "null" | "false" | "mixed" => Self::new(8, 0),
+            "never" => Self::new(8, 1),
+            "true" => Self::new(8, 2),
+            _ => return false,
+        };
+        self >= minimum
     }
 
     /// Parse a PHP version from a Composer `require.php` constraint string.
