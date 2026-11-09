@@ -306,6 +306,7 @@ mod parallel;
 mod parser;
 pub(crate) mod pest;
 pub(crate) mod phar;
+mod php_target;
 pub mod php_type;
 mod phpcs;
 mod phpmd;
@@ -621,6 +622,9 @@ pub struct BackendState {
     /// remove stubs that do not exist in the target PHP version.
     /// Can be consulted when resolving standalone constant references.
     pub(crate) stub_constant_index: Arc<RwLock<HashMap<&'static str, &'static str>>>,
+    /// Entries excluded during initial target selection, retained for re-selection
+    /// before indexing without duplicating the full embedded maps.
+    pub(crate) filtered_stub_entries: Mutex<stubs::FilteredStubEntries>,
     /// Where the stub paths (`[stubs]` in `.phpantom.toml` and the editor's
     /// stub directory) declare each name.  Consulted by the class,
     /// function and constant lookups ahead of everything else, since a stub

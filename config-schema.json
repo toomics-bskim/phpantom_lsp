@@ -11,7 +11,7 @@
       "properties": {
         "version": {
           "type": "string",
-          "description": "Override the detected PHP version (e.g. \"8.3\"). When unset, PHPantom infers from composer.json's platform or require.php.",
+          "description": "Select an exact PHP language version (e.g. \"5.5\" or \"8.3\"). Otherwise use composer.json's config.platform.php, then the lowest supported family allowed by require.php, then 8.5. Changes require restarting PHPantom.",
           "pattern": "^\\d+\\.\\d+(\\.\\d+)?$"
         }
       }

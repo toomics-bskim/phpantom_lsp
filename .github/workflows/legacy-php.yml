@@ -1,0 +1,73 @@
+name: Legacy PHP compatibility
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reference-runtime:
+    name: PHP ${{ matrix.version }}
+    runs-on: windows-2022
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: 5.5.38
+            target: '5.5'
+            archive: php-5.5.38-nts-Win32-VC11-x64.zip
+            sha256: ABDF2FEFCD7D1DAF75D689E309E8571879B15D4B61726546E4E064F96167387A
+          - version: 5.6.40
+            target: '5.6'
+            archive: php-5.6.40-nts-Win32-VC11-x64.zip
+            sha256: 3D7668280FA4B16F70705539BA1E4EA17EEF344C81E82881CBECA26FB7F181F1
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      PHPANTOM_COMPAT_OUTPUT: ${{ github.workspace }}/compatibility-output
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install the reference runtime's VC11 dependency
+        shell: pwsh
+        run: |
+          $redistPath = Join-Path $env:RUNNER_TEMP 'vc11-x64.exe'
+          Invoke-WebRequest 'https://download.microsoft.com/download/1/6/B/16B06F60-3B20-4FF2-B699-5E9B7962F9AE/VSU_4/vcredist_x64.exe' -OutFile $redistPath
+          if ((Get-FileHash -LiteralPath $redistPath -Algorithm SHA256).Hash -ne '681BE3E5BA9FD3DA02C09D7E565ADFA078640ED66A0D58583EFAD2C1E3CC4064') {
+            throw 'VC11 archive checksum mismatch'
+          }
+          $installer = Start-Process -FilePath $redistPath -ArgumentList '/install', '/quiet', '/norestart' -WindowStyle Hidden -Wait -PassThru
+          if ($installer.ExitCode -notin @(0, 1638, 3010)) {
+            throw "VC11 installer exited with $($installer.ExitCode)"
+          }
+      - name: Download pinned reference runtime
+        shell: pwsh
+        env:
+          PHP_ARCHIVE: ${{ matrix.archive }}
+          PHP_SHA256: ${{ matrix.sha256 }}
+        run: |
+          $archivePath = Join-Path $env:RUNNER_TEMP 'php-reference.zip'
+          Invoke-WebRequest "https://windows.php.net/downloads/releases/archives/$env:PHP_ARCHIVE" -OutFile $archivePath
+          if ((Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash -ne $env:PHP_SHA256) {
+            throw 'Reference PHP archive checksum mismatch'
+          }
+          Expand-Archive -LiteralPath $archivePath -DestinationPath (Join-Path $env:RUNNER_TEMP 'php-reference')
+      - name: Check LSP expectations and export applied edits
+        run: cargo test --locked --test legacy_compatibility
+      - name: Check reference lint and deterministic runtime values
+        shell: pwsh
+        env:
+          PHP_TARGET: ${{ matrix.target }}
+          PHP_PATCH: ${{ matrix.version }}
+        run: |
+          node scripts/check-php-compatibility.mjs "$env:PHPANTOM_COMPAT_OUTPUT/$env:PHP_TARGET.json" "$env:RUNNER_TEMP/php-reference/php.exe" $env:PHP_PATCH
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compatibility-${{ matrix.version }}
+          path: compatibility-output/*.json

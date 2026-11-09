@@ -11,8 +11,8 @@ use super::*;
 /// to indicate which PHP versions they apply to.  PHPantom uses this
 /// struct to decide which variant of a stub element to present.
 ///
-/// The version is detected from `composer.json` (`require.php`) during
-/// server initialization. When no version is found, [`PhpVersion::default`]
+/// The version is selected from explicit configuration or root Composer
+/// requirements during initialization. When none is usable, [`PhpVersion::default`]
 /// returns PHP 8.5.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PhpVersion {
@@ -67,54 +67,92 @@ impl PhpVersion {
         self >= minimum
     }
 
-    /// Parse a PHP version from a Composer `require.php` constraint string.
-    ///
-    /// Extracts the first `major.minor` pair found in the constraint.
-    /// Supports common formats:
-    ///   - `"^8.4"` → 8.4
-    ///   - `">=8.3"` → 8.3
-    ///   - `"~8.2"` → 8.2
-    ///   - `"8.1.*"` → 8.1
-    ///   - `">=8.0 <8.4"` → 8.0 (first match wins)
-    ///   - `"8.3.1"` → 8.3
-    ///   - `"^8"` → 8.0
-    ///
-    /// Returns `None` if no version can be extracted.
+    /// The language versions for which automatic target selection is defined.
+    pub const TARGETS: [Self; 13] = [
+        Self::new(5, 5),
+        Self::new(5, 6),
+        Self::new(7, 0),
+        Self::new(7, 1),
+        Self::new(7, 2),
+        Self::new(7, 3),
+        Self::new(7, 4),
+        Self::new(8, 0),
+        Self::new(8, 1),
+        Self::new(8, 2),
+        Self::new(8, 3),
+        Self::new(8, 4),
+        Self::new(8, 5),
+    ];
+
+    /// Select the lowest supported language family admitted by a Composer constraint.
+    /// Patch bounds participate in constraint intersection, then the selected family
+    /// is reduced to major.minor. This does not resolve installed runtime releases.
     pub fn from_composer_constraint(constraint: &str) -> Option<Self> {
-        // Walk through the constraint looking for digit sequences that
-        // form a major.minor version.  Skip common prefix operators.
-        let s = constraint.trim();
+        use semver_php::{Intervals, MultiConstraint, Operator, SingleConstraint, VersionParser};
 
-        // Try each whitespace/pipe-separated segment, return the first match.
-        for segment in s.split(['|', ' ']) {
-            let segment = segment.trim();
-            if segment.is_empty() {
-                continue;
-            }
-
-            // Strip leading operator characters: ^, ~, >=, <=, >, <, =, !
-            let digits_start = segment
-                .find(|c: char| c.is_ascii_digit())
-                .unwrap_or(segment.len());
-            let version_part = &segment[digits_start..];
-
-            if version_part.is_empty() {
-                continue;
-            }
-
-            let mut parts = version_part.split('.');
-            if let Some(major_str) = parts.next()
-                && let Ok(major) = major_str.parse::<u8>()
-            {
-                let minor = parts
-                    .next()
-                    .and_then(|s| s.trim_end_matches('*').parse::<u8>().ok())
-                    .unwrap_or(0);
-                return Some(Self { major, minor });
-            }
+        if constraint.trim().is_empty() {
+            return None;
         }
+        // Common requirements already name their minimum family. Avoid compiling
+        // Composer's constraint regexes at startup for these unambiguous forms.
+        let text = constraint.trim();
+        let exact = text
+            .strip_prefix('^')
+            .or_else(|| text.strip_prefix('~'))
+            .or_else(|| text.strip_prefix(">="))
+            .unwrap_or(text);
+        if exact == exact.trim()
+            && let Some(version) = Self::from_exact(exact)
+            && Self::TARGETS.contains(&version)
+        {
+            return Some(version);
+        }
+        let parsed = VersionParser::parse_constraints(constraint).ok()?;
+        let mut intervals = Intervals::new();
+        Self::TARGETS.into_iter().find(|version| {
+            let family = MultiConstraint::new(
+                vec![
+                    Box::new(SingleConstraint::new(
+                        Operator::Ge,
+                        format!("{}.{}.0.0-dev", version.major, version.minor),
+                    )),
+                    Box::new(SingleConstraint::new(
+                        Operator::Lt,
+                        format!("{}.{}.0.0-dev", version.major, version.minor + 1),
+                    )),
+                ],
+                true,
+            );
+            intervals.have_intersections(parsed.as_ref(), &family)
+        })
+    }
 
-        None
+    /// Read an exact numeric version, without treating operators as an override.
+    /// A patch component is accepted but does not change the language family.
+    pub fn from_exact(value: &str) -> Option<Self> {
+        let mut parts = value.trim().split('.');
+        let number = |part: &str| {
+            (!part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+                .then(|| part.parse::<u8>().ok())
+                .flatten()
+        };
+        let major = number(parts.next()?)?;
+        let minor = number(parts.next()?)?;
+        if let Some(patch) = parts.next()
+            && (patch.is_empty() || !patch.bytes().all(|byte| byte.is_ascii_digit()))
+        {
+            return None;
+        }
+        if parts.next().is_some() {
+            return None;
+        }
+        Some(Self::new(major, minor))
+    }
+
+    /// Read the version at the start of stub metadata, allowing a description after it.
+    /// This stays allocation-free when scanning every declaration during startup.
+    pub fn from_metadata(value: &str) -> Option<Self> {
+        Self::from_exact(value.split_whitespace().next()?)
     }
 
     /// Returns `true` if the given `from`..`to` version range includes

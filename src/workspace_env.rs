@@ -72,6 +72,8 @@ pub(crate) struct WorkspaceEnv {
     pub(crate) workspace_folders: Arc<RwLock<Vec<PathBuf>>>,
     /// The target PHP version used for version-aware stub filtering.
     pub(crate) php_version: Mutex<PhpVersion>,
+    /// Requested target awaiting a restart, also used to avoid duplicate notices.
+    pub(crate) pending_php_version: Mutex<Option<PhpVersion>>,
     /// Per-project configuration loaded from `.phpantom.toml`.
     ///
     /// Shared by `Arc` (unlike `php_version` and the other plain `Mutex`
@@ -219,6 +221,7 @@ impl WorkspaceEnv {
             project_scopes: Arc::new(RwLock::new(None)),
             workspace_folders: Arc::new(RwLock::new(Vec::new())),
             php_version: Mutex::new(PhpVersion::default()),
+            pending_php_version: Mutex::new(None),
             config: Arc::new(Mutex::new(config::Config::default())),
             global_config_path,
             index_filters: Arc::new(RwLock::new(None)),
@@ -270,6 +273,7 @@ impl Clone for WorkspaceEnv {
             project_scopes: Arc::clone(&self.project_scopes),
             workspace_folders: Arc::clone(&self.workspace_folders),
             php_version: Mutex::new(*self.php_version.lock()),
+            pending_php_version: Mutex::new(*self.pending_php_version.lock()),
             config: Arc::clone(&self.config),
             global_config_path: self.global_config_path.clone(),
             index_filters: Arc::clone(&self.index_filters),

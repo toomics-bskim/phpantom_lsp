@@ -186,7 +186,7 @@ fn extract_version_availability(
                         let name = bytes_to_str(named.name.value).to_string();
                         let value = extract_string_literal_value(named.value, ctx.content);
                         if let Some(ver_str) = value {
-                            let ver = PhpVersion::from_composer_constraint(&ver_str);
+                            let ver = PhpVersion::from_metadata(&ver_str);
                             match name.as_str() {
                                 "from" => from = ver,
                                 "to" => to = ver,
@@ -198,7 +198,7 @@ fn extract_version_availability(
                         // Positional argument is treated as `from`.
                         let value = extract_string_literal_value(positional.value, ctx.content);
                         if let Some(ver_str) = value {
-                            from = PhpVersion::from_composer_constraint(&ver_str);
+                            from = PhpVersion::from_metadata(&ver_str);
                         }
                     }
                     _ => {}
@@ -510,7 +510,7 @@ fn extract_version_type_pairs(
             let key = extract_string_literal_value(kv.key, content);
             let value = extract_string_literal_value(kv.value, content);
             if let (Some(ver_str), Some(type_str)) = (key, value)
-                && let Some(ver) = PhpVersion::from_composer_constraint(&ver_str)
+                && let Some(ver) = PhpVersion::from_metadata(&ver_str)
             {
                 out.push((ver, type_str));
             }
@@ -615,7 +615,7 @@ pub(crate) fn merge_deprecation_info(
     // deprecated from the user's perspective.
     if let Some(since_str) = &attr.since
         && let Some(target) = ctx.php_version
-        && let Some(since_ver) = PhpVersion::from_composer_constraint(since_str)
+        && let Some(since_ver) = PhpVersion::from_metadata(since_str)
         && (target.major, target.minor) < (since_ver.major, since_ver.minor)
     {
         return DeprecationInfo {

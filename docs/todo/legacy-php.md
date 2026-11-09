@@ -24,7 +24,11 @@ Both projects explicitly selected their PHP version in `.phpantom.toml`.
 Reference lint and selected runtime checks used the actual Windows x64
 PHP binaries, with `-n`, `short_open_tag=1`, and `asp_tags=1`; runtime
 probes also selected UTC. The same sources were opened through JSON-RPC
-in the built server. Every diagnostic snapshot finished computing.
+in the built server. The baseline treated a nonzero diagnostic result ID
+as ready. The fast phase can publish that ID before the slow phase
+finishes, so its diagnostic counts are historical observations, not proof
+of complete diagnostic coverage. The regression fixture runner awaits
+both native phases before inspecting the pull report.
 CLI `analyze` results were also collected for both projects. Hover,
 completion, definition, signature help, formatting, and code actions
 were exercised where relevant to the sample. Rename, references,
@@ -46,7 +50,7 @@ The three false syntax errors are curly-brace offsets, a class named
 another gap: the reference lexer accepts them with `asp_tags=1`, while
 PHPantom supplies no type and no formatting edit. A silent document is
 not evidence that PHP code inside the tags was understood.
-None of the 39 / 25 invalid samples receives a target-version diagnostic;
+None of the 39 / 25 invalid-source snapshots contains a target-version diagnostic;
 the two unrelated reports concern an unknown class and an uninitialized
 property. Valid syntax alone also says nothing about runtime correctness.
 
@@ -93,78 +97,20 @@ hint; it is not evidence of support for the later primitive type.
 ## Delivery order
 
 Each numbered item is one implementation task and one PR. Start with
-LP1, then LP3–LP5 to prevent damaging edits and incorrect built-in
-information. LP6–LP9 establish shared version-aware parsing and call
+LP5 to establish consistent built-in information. LP6–LP9 establish
+shared version-aware parsing and call
 resolution; LP10–LP17 address the remaining semantic and inference gaps.
 LP19 covers the remaining edit producers; LP18 qualifies the final support
 claim. Dependencies below are explicit;
 items can move into scheduled sprints without changing their scope.
 
 Reproduced defects should receive GitHub issues with the audit sample
-and target version attached, especially LP3, LP5, and LP9. This
+and target version attached, especially LP5 and LP9. This
 document records the work; it does not imply issues have been opened.
-
-## LP1. Versioned compatibility regression fixtures
-
-**Impact: High · Complexity: Medium**
-
-**Plan.** Turn the audit sources into portable fixtures using the existing
-integration helpers. Assert expected behavior, rather than blessing the
-current output or the audit's exploratory hover patterns. Keep lint,
-runtime values, LSP observations, and unsupported-version diagnostics
-distinct. Reuse the call-resolution conformance work in
-[T61](type-inference.md#t61-a-regression-that-changes-where-a-call-resolves-goes-unnoticed).
-
-**Done when.** The harness selects 5.5 and 5.6 explicitly, waits for ready
-diagnostics, applies edits before linting, and compares deterministic
-runtime results. PHP 7/8 controls distinguish legacy-specific behavior
-from general inference gaps. Runtime-dependent checks run in a pinned,
-optional job; ordinary Rust tests do not require local PHP installations.
-Use real portable file URIs and include CRLF cases.
-
-## LP3. Formatting preserves legacy expression semantics
-
-**Impact: Critical · Complexity: High · Depends on: LP1**
-
-**Evidence.** `old_concat_precedence` formats `'x' . 1 + 2` into
-`'x' . (1 + 2)`. Both PHP 5 runtimes change from integer `2` to string
-`"x3"`. Passing the configured version into `formatting/mago.rs` already
-happens and does not prevent this change.
-
-**Plan.** Correct the parser/formatter interpretation of version-sensitive
-precedence, coordinating with Mago if needed. Share the source semantics
-with LP6 instead of rewriting text after formatting. Include ternaries,
-variable binding, literal escapes, and comment/tag boundaries as controls.
-
-**Done when.** Full-document and range formatting preserve deterministic
-results and remain idempotent on both runtimes. PHP 8 precedence stays
-correct. Formatting valid legacy syntax must not depend on suppressing
-its parse error.
-
-## LP4. Target selection and version changes have one contract
-
-**Impact: High · Complexity: Medium-High · Depends on: LP1**
-
-**Source finding; reload behavior not yet reproduced.** The explicit
-configuration overrides Composer detection, and `config.platform.php`
-precedes `require.php`. `PhpVersion::from_composer_constraint` takes the
-first numeric segment, rather than solving constraints. `set_php_version`
-filters embedded indexes with `retain`; restoring removed symbols and
-invalidating already-resolved types needs a bidirectional test.
-
-**Plan.** Define an effective target per project and propagate it through
-the shared parse/type/edit context. Specify behavior for OR constraints,
-upper bounds, invalid settings, and absent Composer files. Preserve an
-explicit override for applications using manual `require`/autoloading.
-
-**Done when.** CLI and LSP choose the same target; switching 5.5 → 8.x →
-5.6 and back produces fresh syntax, stubs, types, and edits. If changes
-require restart, document and enforce that contract. Measure startup,
-cache size, and request latency; avoid per-expression version locks.
 
 ## LP5. Built-in symbols obey introduction and removal versions
 
-**Impact: High · Complexity: Medium-High · Depends on: LP1, LP4**
+**Impact: High · Complexity: Medium-High**
 
 **Evidence.** Both targets resolve future symbols such as `random_int`,
 `str_contains`, `array_is_list`, `Fiber`, and `PHP_INT_MIN`. DateTime
@@ -185,13 +131,13 @@ removed legacy functions, and version switches in both directions.
 
 ## LP6. Legacy source forms parse with correct spans
 
-**Impact: High · Complexity: High · Depends on: LP1, LP4**
+**Impact: High · Complexity: High**
 
 **Evidence.** `curly_offset`, `reserved_match_name`, and
 `hash_bracket_comment` are accepted by both reference linters but receive
 syntax errors. `asp_tag` is treated as non-code. `parser/recovery.rs`
-calls the Mago parser without a source-version parameter; its current
-parser settings do not supply one.
+still uses modern default parser settings instead of the project's
+source version. Propagate the effective target through that shared path.
 
 **Plan.** Establish version-aware source lexing/parsing for these forms,
 including an explicit policy for optional short/ASP tags and script tags.
@@ -206,7 +152,7 @@ Stub files retain the syntax needed to describe older APIs.
 
 ## LP7. Report syntax unavailable at the selected version
 
-**Impact: High · Complexity: Medium-High · Depends on: LP4, LP6**
+**Impact: High · Complexity: Medium-High · Depends on: LP6**
 
 **Evidence.** The invalid-source counts above include PHP 5.6 features on
 5.5 and later syntax on both targets. No target-version diagnostic is
@@ -224,7 +170,7 @@ mistaken for syntax executed by a PHP 5 project.
 
 ## LP8. Native type hints retain PHP 5 class-name meaning
 
-**Impact: High · Complexity: High · Depends on: LP4, LP6**
+**Impact: High · Complexity: High · Depends on: LP6**
 
 **Evidence.** `scalar_type_mismatch` declares `function f(int $x)` and
 passes integer `1`. Both reference runtimes reject the argument because
@@ -247,7 +193,7 @@ native scalar hints retain their existing behavior.
 
 ## LP9. Class-name constructors participate in call resolution
 
-**Impact: High · Complexity: Medium-High · Depends on: LP1, LP4**
+**Impact: High · Complexity: Medium-High**
 
 **Evidence.** `old_constructor_missing_arg` and `constructor_inherited`
 have empty `(): mixed` signature help and no missing-argument diagnostic.
@@ -265,7 +211,7 @@ promoted to a constructor. Include the PHP 8 removal boundary.
 
 ## LP10. Loose comparisons narrow by the target semantics
 
-**Impact: High · Complexity: High · Depends on: LP1, LP4**
+**Impact: High · Complexity: High**
 
 **Evidence.** With a `0|'foo'` parameter, the `== 'foo'` branch narrows to
 `'foo'`, although both runtimes also enter it for `0`.
@@ -281,7 +227,7 @@ weakening unrelated diagnostics.
 
 ## LP11. Resolve legacy dynamic variable binding
 
-**Impact: Medium-High · Complexity: High · Depends on: LP4, LP6**
+**Impact: Medium-High · Complexity: High · Depends on: LP6**
 
 **Evidence.** `indirect_variable` evaluates `$$names['key']` to an
 `AuditIndirect` object, but hover is `mixed` and member completion is
@@ -298,7 +244,7 @@ Completion and diagnostics consume the same resolved value.
 
 ## LP12. Destructuring updates append targets in runtime order
 
-**Impact: Medium-High · Complexity: High · Depends on: LP1, LP4**
+**Impact: Medium-High · Complexity: High**
 
 **Evidence.** `list_append_order` assigns `list($values[], $values[]) =
 array(1, 2)`. Both runtimes produce `2` at index zero; PHPantom reports
@@ -314,7 +260,7 @@ targets, with the version's assignment order and nested/keyed targets.
 
 ## LP13. Legacy constant lookup preserves name rules
 
-**Impact: Medium · Complexity: Medium-High · Depends on: LP1, LP4**
+**Impact: Medium · Complexity: Medium-High**
 
 **Evidence.** A lowercase lookup of `define('AUDIT_CASE_CONST', 'value',
 true)` returns `'value'` on both runtimes but has no inferred hover type.
@@ -332,7 +278,7 @@ modern error behavior and collisions between differently cased names.
 
 ## LP14. Built-in argument and return contracts match PHP 5
 
-**Impact: High · Complexity: Medium-High · Depends on: LP1, LP5**
+**Impact: High · Complexity: Medium-High · Depends on: LP5**
 
 **Evidence.** `count_scalar` evaluates `count(42)` to `1` in both
 runtimes but receives `type_mismatch_argument`. Retaining an old function
@@ -349,7 +295,7 @@ APIs through declared stubs without requiring database/network access.
 
 ## LP15. Returned closures retain their bound receiver type
 
-**Impact: Medium · Complexity: High · Depends on: LP1**
+**Impact: Medium · Complexity: High**
 
 **Evidence.** `closure_this` returns a closure reading `$this->name`;
 the actual call returns `'bound'`, while hover is `mixed`. This is an
@@ -366,7 +312,7 @@ existing closure-scope work in the diagnostics backlog.
 
 ## LP16. Unannotated generators infer yielded values
 
-**Impact: Medium · Complexity: High · Depends on: LP1**
+**Impact: Medium · Complexity: High**
 
 **Evidence.** `generator_inferred` yields a known string but its foreach
 value is `mixed`. The annotated generator control resolves correctly.
@@ -383,7 +329,7 @@ functions on every request.
 
 ## LP17. Variadic and unpacked calls carry argument types
 
-**Impact: Medium-High · Complexity: High · Depends on: LP1**
+**Impact: Medium-High · Complexity: High**
 
 **Evidence.** On PHP 5.6, `variadic_value` returns `'first'` and
 `unpack_value` returns `'b'`, but neither probe has a hover type.
@@ -402,7 +348,7 @@ Ordinary calls and modern unpacking keep their behavior.
 
 ## LP19. Remaining generated edits respect the target language
 
-**Impact: High · Complexity: Medium-High · Depends on: LP1, LP4, LP7**
+**Impact: High · Complexity: Medium-High · Depends on: LP7**
 
 **Plan.** Audit edit producers outside constructor/accessor/property-hook
 generation: constructor-parameter promotion, type insertion, method
@@ -424,7 +370,7 @@ their meaning. Record a reproducer for every additional failure found.
 
 ## LP18. Qualify and document the support contract
 
-**Impact: High · Complexity: Medium · Depends on: LP3–LP17, LP19**
+**Impact: High · Complexity: Medium · Depends on: LP5–LP17, LP19**
 
 **Plan.** Expand the regression matrix to remaining language and LSP
 surfaces before claiming full support: include/require and manual
@@ -465,4 +411,5 @@ on the trait alias call, and code actions on `$name` in `setter`. Apply
 each edit to the original source separately, then lint with the matching
 runtime. For selected safe runtime probes, the evidence records the
 expression wrapper and output. Do not compare nondeterministic values.
-LP1 will make this manual protocol an automated repository fixture runner.
+See the [compatibility fixture guide](../../tests/compatibility/README.md)
+for automated regression checks and the optional reference-runtime job.

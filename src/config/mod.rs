@@ -132,7 +132,8 @@ impl std::fmt::Display for SemanticTokensMode {
 #[serde(default)]
 pub struct PhpConfig {
     /// Override the detected PHP version (e.g. `"8.3"`).
-    /// When `None`, PHPantom infers from `composer.json`.
+    /// An exact numeric version, applied at startup. When `None`, PHPantom
+    /// infers from `composer.json`. Changes require a server restart.
     pub version: Option<String>,
 }
 

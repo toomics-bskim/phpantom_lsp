@@ -1,0 +1,132 @@
+# PHP target compatibility fixtures
+
+Run the PHP-independent checks with:
+
+```sh
+cargo test --locked --test legacy_compatibility
+```
+
+The suite creates isolated projects that explicitly select PHP 5.5, 5.6,
+7.4, and 8.5. It uses the existing integration helpers and the real LSP
+handlers, awaits both native diagnostic phases before reading the pull
+report, and checks both LF and CRLF source. A nonzero result ID alone is
+insufficient because the fast phase also publishes one. Trait alias
+navigation checks the declaration location, not merely the absence of
+diagnostics. This does not depend on the proposed project-wide semantic
+export conformance mode.
+
+The immutable [audit](../../docs/compatibility/php55-php56-audit.json)
+supplies the 112 source samples and reference PHP 5.5/5.6 lint expectations.
+Its historical PHPantom observations are **not** golden test results.
+[`expectations.json`](expectations.json) independently declares the expected
+hover types and deterministic runtime values for the active controls.
+The runner also applies generated constructor/accessor edits and both
+document and range formatting edits before exporting them for execution.
+Formatting controls must remain idempotent.
+
+[`formatting.json`](formatting.json) declares independent runtime expectations
+for version-sensitive expressions, explicit parentheses, and lexical controls.
+Every applicable case runs with LF and CRLF, before formatting and after both
+document and selection formatting. Selection checks also preserve surrounding
+lines. Parser checks cover the PHP 7.4/8.0 boundary, the modern default, and
+byte spans after non-ASCII text; custom formatter parser settings must retain
+the selected target.
+
+For a manual check, set `[php] version = "5.5"` in `.phpantom.toml` and format
+`<?php $probe = '10' . 1 + 2;`. On PHP 5 its result remains integer `103`.
+With an `8.5` target the same expression returns string `"103"`, which formatting
+must also preserve. The patched dependency sources and their provenance are
+documented in [`third_party/mago`](../../third_party/mago/README.md).
+
+## Reference runtime checks
+
+Export fixtures while running the Rust checks, then execute them with an
+explicitly selected PHP binary and exact patch version. For example, in
+PowerShell:
+
+```powershell
+$env:PHPANTOM_COMPAT_OUTPUT = Join-Path $env:TEMP 'phpantom-compatibility-output'
+cargo test --locked --test legacy_compatibility
+node scripts/check-php-compatibility.mjs "$env:PHPANTOM_COMPAT_OUTPUT/5.5.json" C:/php55/php.exe 5.5.38
+node scripts/check-php-compatibility.mjs "$env:PHPANTOM_COMPAT_OUTPUT/5.6.json" C:/php56/php.exe 5.6.40
+```
+
+On Unix, set `PHPANTOM_COMPAT_OUTPUT=/tmp/phpantom-compatibility-output`
+before the cargo command and pass the appropriate PHP executable paths.
+The same runner accepts the exported `7.4.json` and `8.5.json` controls,
+with a matching exact runtime version. No PHP executable is needed by the
+ordinary Rust suite, and exporting does not execute PHP.
+
+The optional [Legacy PHP compatibility workflow](../../.github/workflows/legacy-php.yml)
+runs on manual dispatch. It downloads the official PHP 5.5.38 and 5.6.40
+Windows archives, verifies their SHA-256 hashes, installs the matching
+[Microsoft VC11 dependency](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist/),
+and checks the generated fixtures. Reference PHP runs with `-n`, UTC,
+and short tags enabled; PHP 5 also enables ASP tags, matching the baseline. Each subprocess
+has a timeout. Lint, runtime, and pending expectation counts are separate.
+
+## Target selection and restart checks
+
+The `php_target` unit tests and `php_version` integration tests cover
+configuration precedence, Composer ranges, restoration of filtered stubs,
+and a sequence of fresh 5.5, 8.5, 5.6, and 5.5 sessions. They compare CLI
+and LSP formatting and check version-sensitive types and generated setters.
+Config and root Composer file changes keep the active target unchanged;
+restarting applies the requested target. See the
+[configuration contract](../../docs/configuration.md#php).
+
+For a repeatable local cost sample, run:
+
+```sh
+cargo test --test integration php_target_cost_sample -- --ignored --nocapture
+```
+
+This constructs a backend with the embedded stubs, initializes a temporary
+project, opens a `DateTime` example, then measures 100 warm hover requests.
+It reports startup time, median and 95th percentile hover time, and cache
+entry counts. Startup excludes compilation and document opening. The test
+is ignored in normal runs because timings are observations, not assertions.
+
+One local run on 2026-11-09 used Rust 1.99.1, an unoptimized Linux Docker
+build with debug info disabled, and the repository's embedded stubs:
+
+| Composer requirement | Startup (ms) | Hover p50 / p95 (ms) | Indexed stub functions / constants |
+| --- | ---: | ---: | ---: |
+| `5.5` | 61.6 | 0.40 / 0.52 | 5,253 / 8,206 |
+| `8.5` | 62.7 | 0.38 / 0.53 | 5,040 / 8,135 |
+| `5.6` | 61.0 | 0.54 / 0.70 | 5,253 / 8,200 |
+| `^8.0` or `^5.5` | 78.5 | 0.43 / 0.53 | 5,253 / 8,206 |
+
+Each case retained 15 class entries, zero function entries, and two parsed
+files in the lazy caches. These counts distinguish parsed caches from the
+embedded symbol indexes; they are not heap-byte estimates. The snapshot
+is a smoke measurement, not a release benchmark or a comparison with an
+earlier build. Introduction-version gaps remain in the compatibility
+backlog, so the index counts are not claims of complete stub filtering.
+
+## Known gaps and extending coverage
+
+The ignored Rust tests assert the desired behavior for legacy parsing and
+unsupported-version diagnostics. Run them explicitly with
+`cargo test --test legacy_compatibility -- --ignored` when fixing those
+features, then remove their ignore attributes. They are not passing
+coverage. The unsupported-version check is provisional until the server
+has a diagnostic code for it; replace its message assertion with that code
+when implementing the diagnostic.
+
+Formatting runtime expectations are required; none has a pending marker.
+The runner can report a pending value mismatch separately when a future
+fixture explicitly links to an outstanding task. A syntax failure, crash,
+or unexpected pass still fails the run.
+
+All 112 original sources receive reference lint checks on each legacy
+runtime. Active LSP controls cover hover, diagnostics, completion,
+constructor signature help, trait navigation, formatting, and
+constructor/accessor generation; they do not claim full
+feature coverage for every audit source. Expand the controls alongside the
+remaining tasks in [the compatibility backlog](../../docs/todo/legacy-php.md).
+Broader call-resolution assertions and the remaining LSP
+surfaces belong to that qualification work. Keep nondeterministic values
+(dates, random hashes) and extension-dependent side effects out of runtime
+expectations. A fixture accepted by PHP lint need not execute successfully,
+and neither fact proves the language server inferred its types correctly.

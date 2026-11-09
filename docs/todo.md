@@ -205,9 +205,6 @@ source syntax, runtime semantics, built-ins, and editor behavior.
 
 | # | Item | Impact | Complexity |
 | --- | --- | --- | --- |
-| LP1 | [Versioned compatibility regression fixtures](todo/legacy-php.md#lp1-versioned-compatibility-regression-fixtures) | High | Medium |
-| LP3 | [Formatting preserves legacy expression semantics](todo/legacy-php.md#lp3-formatting-preserves-legacy-expression-semantics) | Critical | High |
-| LP4 | [Target selection and version changes have one contract](todo/legacy-php.md#lp4-target-selection-and-version-changes-have-one-contract) | High | Medium-High |
 | LP5 | [Built-in symbols obey introduction and removal versions](todo/legacy-php.md#lp5-built-in-symbols-obey-introduction-and-removal-versions) | High | Medium-High |
 | LP6 | [Legacy source forms parse with correct spans](todo/legacy-php.md#lp6-legacy-source-forms-parse-with-correct-spans) | High | High |
 | LP7 | [Report syntax unavailable at the selected version](todo/legacy-php.md#lp7-report-syntax-unavailable-at-the-selected-version) | High | Medium-High |

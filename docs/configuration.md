@@ -87,13 +87,36 @@ release that added it.
 
 | Key       | Type   | Default                     | Description |
 | --------- | ------ | --------------------------- | ----------- |
-| `version` | string | Inferred from composer.json | Override the detected PHP version (e.g. `"8.3"`). |
+| `version` | string | Inferred from composer.json | Select an exact PHP version (e.g. `"5.5"` or `"8.3"`). Restart PHPantom after changing it. |
 
-PHPantom understands PHP syntax up to 8.5. The version, taken from the
-`php` requirement in `composer.json` when this key is unset and 8.5
-when neither says, decides which built-in functions, classes, and
-constants exist, and which version-specific diagnostics and code
-actions apply.
+The CLI and language server select the target in this order:
+
+1. `[php] version` in the merged project/global configuration.
+2. `config.platform.php` in the workspace root's `composer.json`.
+3. The lowest supported language family admitted by `require.php`.
+4. PHP 8.5 when none supplies a usable target.
+
+The first two accept exact numeric versions; a patch such as `5.6.40`
+selects the 5.6 language family. Composer requirements use Composer's
+range rules: `^8.0 || ^5.5` selects 5.5, `<7 >=5.6` selects 5.6, and
+an upper-only constraint such as `<7` selects 5.5. AND conditions and
+exact-version exclusions participate in selection. Invalid settings,
+or constraints admitting no supported family, produce a warning before
+falling back to the next source. With no Composer file, an explicit
+override still works for applications using manual autoloading.
+
+Selectable families are 5.5–5.6, 7.0–7.4, and 8.0–8.5. Selection does
+not resolve installed PHP patch releases or all transitive Composer
+requirements. Legacy compatibility remains subject to the
+[known gaps](todo/legacy-php.md); selecting a target does not imply
+complete support for that language version.
+
+The target is fixed for the session, including its workers, cached types,
+stubs, diagnostics, and generated edits. Changing the effective target
+in either configuration file or the root `composer.json` shows a restart
+notice. Until restarted, PHPantom consistently uses the old target;
+the next CLI invocation reads the new one. Library folders indexed
+alongside the workspace use the workspace's target.
 
 ### `[diagnostics]`
 

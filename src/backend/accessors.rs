@@ -12,6 +12,19 @@ use crate::types::{ClassInfo, DefineInfo, FunctionInfo};
 use crate::{Backend, ClassCompletionOrigin, composer};
 
 impl Backend {
+    /// Complete both native diagnostic phases for an open integration-test
+    /// document before its pull report is inspected. A nonzero result ID alone
+    /// is not a completion barrier: the fast phase publishes one too.
+    pub async fn publish_test_diagnostics(&self, uri: &str) {
+        let content = self
+            .open_files
+            .read()
+            .get(uri)
+            .cloned()
+            .expect("the diagnostic fixture must be open");
+        self.publish_diagnostics_for_file(uri, &content).await;
+    }
+
     /// Borrow the workspace root mutex (used by integration tests to set a
     /// custom workspace directory).
     pub fn workspace_root(&self) -> &Arc<RwLock<Option<PathBuf>>> {

@@ -185,8 +185,9 @@ impl Backend {
         *self.workspace.php_version.lock()
     }
 
-    /// Set the PHP version (used by integration tests and during
-    /// server initialization after reading `composer.json`).
+    /// Select the initial PHP version before indexing, or configure a test backend.
+    /// A running LSP session keeps its initial target until restart; this method
+    /// does not migrate already-parsed project files to a different language.
     ///
     /// Also filters `stub_function_index`, `stub_index`, and
     /// `stub_constant_index` to remove entries that do not exist in
@@ -209,14 +210,74 @@ impl Backend {
                 .as_ref()
                 .is_some_and(|names| names.contains(kind, name))
         };
-        self.stub_function_index
-            .write()
-            .retain(|name, source| !is_removed(source, name, stubs::StubSymbolKind::Function));
-        self.stub_index
-            .write()
-            .retain(|name, source| !is_removed(source, name, stubs::StubSymbolKind::Class));
-        self.stub_constant_index
-            .write()
-            .retain(|name, source| !is_removed(source, name, stubs::StubSymbolKind::Constant));
+        let mut filtered = self.filtered_stub_entries.lock();
+        let mut functions = self.stub_function_index.write();
+        for (name, source) in filtered.functions.drain(..) {
+            functions.or_insert_with(name, || source);
+        }
+        functions.retain(|name, source| {
+            if is_removed(source, name, stubs::StubSymbolKind::Function) {
+                filtered.functions.push((name.to_owned(), source));
+                false
+            } else {
+                true
+            }
+        });
+        drop(functions);
+        let mut classes = self.stub_index.write();
+        for (name, source) in filtered.classes.drain(..) {
+            classes.or_insert_with(name, || source);
+        }
+        classes.retain(|name, source| {
+            if is_removed(source, name, stubs::StubSymbolKind::Class) {
+                filtered.classes.push((name.to_owned(), source));
+                false
+            } else {
+                true
+            }
+        });
+        drop(classes);
+        let mut constants = self.stub_constant_index.write();
+        for (name, source) in filtered.constants.drain(..) {
+            constants.entry(name).or_insert(source);
+        }
+        constants.retain(|name, source| {
+            if is_removed(source, name, stubs::StubSymbolKind::Constant) {
+                filtered.constants.push((name, source));
+                false
+            } else {
+                true
+            }
+        });
+    }
+
+    /// Keep the active target unchanged and notify once for each requested target.
+    pub(crate) fn check_php_target_change(&self, root: &std::path::Path) {
+        let package = crate::composer::read_composer_package(root);
+        let target = crate::php_target::resolve(&self.config(), package.as_ref());
+        for warning in target.warnings {
+            self.warn_php_target(warning);
+        }
+        let active = self.php_version();
+        let requested = (target.version != active).then_some(target.version);
+        let previous =
+            std::mem::replace(&mut *self.workspace.pending_php_version.lock(), requested);
+        if requested != previous
+            && let Some(version) = requested
+        {
+            self.warn_php_target(format!("PHP target changed from {active} to {version}. Restart PHPantom to apply it; this session continues using PHP {active}"));
+        }
+    }
+
+    /// Surface target-selection warnings in both the client log and editor UI.
+    pub(crate) fn warn_php_target(&self, message: String) {
+        use tower_lsp_server::gen_lsp_types::MessageType;
+        self.log_detached(MessageType::Warning, message.clone());
+        if let Some(client) = &self.client
+            && let Ok(runtime) = tokio::runtime::Handle::try_current()
+        {
+            let client = client.clone();
+            runtime.spawn(async move { client.show_message(MessageType::Warning, message).await });
+        }
     }
 }

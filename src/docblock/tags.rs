@@ -193,7 +193,7 @@ pub fn extract_removed_version(docblock: &str) -> Option<PhpVersion> {
     if desc.is_empty() {
         return None;
     }
-    PhpVersion::from_composer_constraint(desc)
+    PhpVersion::from_metadata(desc)
 }
 
 /// The `@global Type $name` tags of a function's docblock: the global

@@ -1,5 +1,20 @@
 # Third-party notices
 
+## semver-php
+
+Composer constraint selection uses the MIT-licensed
+[`semver-php` 0.1.0](https://crates.io/crates/semver-php/0.1.0)
+dependency, a Rust port of Composer's constraint and interval logic.
+It is linked as a Cargo dependency; its source is not vendored here.
+
+## Mago
+
+The locally patched `mago-syntax` and `mago-formatter` 1.58.2 sources in
+[`third_party/mago/`](third_party/mago/README.md) are from
+[Mago](https://github.com/carthage-software/mago), copyright 2024-present
+Seifeddine Gmati. They are dual-licensed under MIT or Apache 2.0; the
+upstream license texts and patch provenance are included in that directory.
+
 ## nikic/PHP-Parser
 
 The built-in type introduction table in `src/types/php_version.rs` is

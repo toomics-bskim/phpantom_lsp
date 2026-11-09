@@ -415,6 +415,68 @@ fn reload_config_is_visible_on_every_clone() {
     );
 }
 
+#[test]
+fn php_target_reload_requires_restart_and_is_shared_with_workers() {
+    let dir = tempfile::tempdir().unwrap();
+    let backend = Backend::new_test();
+    backend.set_php_version(crate::types::PhpVersion::new(5, 5));
+    let worker = backend.clone_for_blocking();
+    for (version, pending) in [("8.5", Some((8, 5))), ("5.6", Some((5, 6))), ("5.5", None)] {
+        std::fs::write(
+            dir.path().join(crate::config::CONFIG_FILE_NAME),
+            format!("[php]\nversion = \"{version}\"\n"),
+        )
+        .unwrap();
+        worker.reload_config(dir.path());
+        assert_eq!(backend.php_version(), crate::types::PhpVersion::new(5, 5));
+        assert_eq!(worker.php_version(), backend.php_version());
+        assert_eq!(
+            *backend.workspace.pending_php_version.lock(),
+            pending.map(|(major, minor)| crate::types::PhpVersion::new(major, minor))
+        );
+    }
+}
+
+#[test]
+fn php_target_composer_creation_change_and_deletion_require_restart() {
+    use tower_lsp_server::gen_lsp_types::{DidChangeWatchedFilesParams, FileChangeType, FileEvent};
+    let dir = tempfile::tempdir().unwrap();
+    let root = dunce::canonicalize(dir.path()).unwrap();
+    let backend = Backend::new_test_with_workspace(root.clone(), Vec::new());
+    let path = root.join("composer.json");
+    for (kind, content, expected) in [
+        (
+            FileChangeType::Created,
+            Some(r#"{"require":{"php":"^5.5"}}"#),
+            Some((5, 5)),
+        ),
+        (
+            FileChangeType::Changed,
+            Some(r#"{"config":{"platform":{"php":"5.6.40"}}}"#),
+            Some((5, 6)),
+        ),
+        (FileChangeType::Deleted, None, None),
+    ] {
+        if let Some(content) = content {
+            std::fs::write(&path, content).unwrap();
+        } else {
+            std::fs::remove_file(&path).unwrap();
+        }
+        let params = DidChangeWatchedFilesParams {
+            changes: vec![FileEvent {
+                uri: crate::util::path_to_url(&path).unwrap(),
+                kind,
+            }],
+        };
+        backend.apply_watched_file_changes(&params, &root);
+        assert_eq!(backend.php_version(), crate::types::PhpVersion::default());
+        assert_eq!(
+            *backend.workspace.pending_php_version.lock(),
+            expected.map(|(major, minor)| crate::types::PhpVersion::new(major, minor))
+        );
+    }
+}
+
 /// Switching diagnostics off in the config clears what open files were
 /// shown, and switching them back on fills it in again, both without
 /// waiting for the next edit: the reload queues every open file for the

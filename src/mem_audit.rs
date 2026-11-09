@@ -1597,6 +1597,15 @@ pub(crate) fn report(backend: &Backend, runner_content_bytes: usize) {
     misc.add(backend.stub_index.read().audit_heap(|_| 0));
     misc.add(backend.stub_function_index.read().audit_heap(|_| 0));
     {
+        let filtered = backend.filtered_stub_entries.lock();
+        misc.add(filtered.classes.capacity() * size_of::<(String, &str)>());
+        misc.add(filtered.functions.capacity() * size_of::<(String, &str)>());
+        misc.add(filtered.constants.capacity() * size_of::<(&str, &str)>());
+        for (name, _) in filtered.classes.iter().chain(&filtered.functions) {
+            misc.add(name.capacity());
+        }
+    }
+    {
         let m = backend.stub_constant_index.read();
         misc += map_buckets::<&'static str, &'static str>(m.capacity());
     }
@@ -1930,6 +1939,7 @@ pub(crate) fn report(backend: &Backend, runner_content_bytes: usize) {
         *backend.stub_index.write() = Default::default();
         *backend.stub_function_index.write() = Default::default();
         *backend.stub_constant_index.write() = Default::default();
+        *backend.filtered_stub_entries.lock() = Default::default();
     });
     probe("parsed_uris", &mut || {
         *backend.parsed_uris.write() = Default::default()

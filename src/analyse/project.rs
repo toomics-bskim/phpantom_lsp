@@ -75,12 +75,11 @@ fn project_php_version(
     cfg: &config::Config,
     composer_package: Option<&composer::ComposerPackage>,
 ) -> PhpVersion {
-    cfg.php
-        .version
-        .as_deref()
-        .and_then(PhpVersion::from_composer_constraint)
-        .or_else(|| composer_package.and_then(composer::detect_php_version_from_package))
-        .unwrap_or_default()
+    let target = crate::php_target::resolve(cfg, composer_package);
+    for warning in target.warnings {
+        eprintln!("Warning: {warning}");
+    }
+    target.version
 }
 
 /// Parse every file in `files` on parallel workers, populating the

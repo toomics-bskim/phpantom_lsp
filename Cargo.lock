@@ -1053,8 +1053,6 @@ dependencies = [
 [[package]]
 name = "mago-formatter"
 version = "1.58.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "593a7043aed31970138ac36e6a65872192983189dced150959fb9f00f5ec1650"
 dependencies = [
  "foldhash",
  "mago-allocator",
@@ -1142,8 +1140,6 @@ dependencies = [
 [[package]]
 name = "mago-syntax"
 version = "1.58.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d36dc15d1cec650a36f6099ab4f7ec18fa8266f6f0677eed7831a55dfe95adc8"
 dependencies = [
  "mago-allocator",
  "mago-database",
@@ -1411,6 +1407,7 @@ dependencies = [
  "parking_lot",
  "regex",
  "self-replace",
+ "semver-php",
  "serde",
  "serde_ignored",
  "serde_json",
@@ -1744,6 +1741,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "semver-php"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6243e64c825daac56b6c595cb4588aba6ab17042f5b0d9b468d82a25793ea2e"
+dependencies = [
+ "regex",
+ "thiserror",
+]
+
+[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2019,6 +2026,26 @@ checksum = "230a1b821ccbd75b185820a1f1ff7b14d21da1e442e22c0863ea5f08771a8874"
 dependencies = [
  "rustix",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09e52cb86a36cede5cb101bf8908837b3e4c6e5e59fe7fd85c23fb56200d189e"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.9",
 ]
 
 [[package]]

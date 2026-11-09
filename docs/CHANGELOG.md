@@ -582,6 +582,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Completion, hover, and editor features
 
+- **Formatting preserves older PHP expression behavior.** Built-in document and selection formatting now respect the configured PHP version when combining string concatenation with arithmetic or shifts, preserving the result on PHP 5 and 7 as well as PHP 8.
 - **Global class member navigation.** Following a member of a global class goes to its declaration even when another namespace contains a class with the same short name. Contributed by @shuvroroy.
 - **Classes that share a short name in one type.** Hover, completion, and signature help now show each class by its full name when a type names two classes with the same short name, such as `class-string<\App\C>|class-string<\Other\C>`, instead of printing them as one.
 - **Code examples in hover.** A multi-line `<code>` or `<pre>` example in a docblock, as in Doctrine's query builder, now shows as a code block instead of running together on one line.
@@ -679,6 +680,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Indexing and configuration
 
+- **Consistent PHP target selection.** The editor and CLI honour the same explicit override and Composer constraints, including alternative version ranges. Changing the target shows a restart notice; the current session keeps its original version until restarted.
+- **Removed built-ins stay filtered.** Removal metadata written in a single-line docblock is now honoured, and selecting an older initial target restores the built-ins available there.
 - **Editor help for `[inlay_hints]`.** The configuration schema now describes the `[inlay_hints]` section, so editors with TOML schema support complete and explain its keys like the rest of `.phpantom.toml`.
 - **Tools installed with the Composer bin plugin.** In a project using `bamarni/composer-bin-plugin`, classes from the tools under `vendor-bin/` (PHPUnit's `TestCase`, say) resolve again without un-ignoring their vendor directories, and stay out of analysis like any other vendor code. PHPUnit's version is read from there too.
 - **`[indexing] exclude` covers Composer's class lists.** A class Composer's classmap or PSR-0 map names no longer resolves from a path you excluded, so excluding a path mid-session and restarting give the same result.
@@ -708,6 +711,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **PHP target compatibility checks.** Portable regression fixtures compare legacy and modern targets, with optional pinned PHP 5.5 and 5.6 runtime checks for generated edits and formatting.
 - **Tempest performance checks.** CI measures template editing, completion, navigation, and memory use against the Tempest playground. Contributed by @shuvroroy.
 - **Pull request benchmarks no longer fail on a slow runner.** Each benchmark runner measures both the PR and its base, so the 30% regression check reflects the change rather than which machine ran it. Contributed by @shuvroroy. Closes #489.
 - **Faster benchmark checks on pull requests.** Latency benchmarks now run split across four runners, and benchmark alerts on fork pull requests show up in the job summary instead of failing on a permission error. Contributed by @shuvroroy.

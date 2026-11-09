@@ -182,6 +182,14 @@ impl Backend {
         }
 
         if !batch.composer_changes.is_empty() {
+            if !batch.config_changed
+                && batch
+                    .composer_changes
+                    .iter()
+                    .any(|path| path == &root.join("composer.json"))
+            {
+                self.check_php_target_change(root);
+            }
             tracing::info!("PHPantom: composer files changed, rescanning vendor");
             self.rescan_composer_indexes(root, &batch.composer_changes);
             self.forget_vendor_twig_callables();
@@ -494,8 +502,8 @@ impl Backend {
     /// Used both for a project's own `.phpantom.toml` (via
     /// [`apply_watched_file_changes`](Self::apply_watched_file_changes))
     /// and for the global config file (polled by the background watcher
-    /// spawned in `initialized`), so either one takes effect immediately
-    /// instead of requiring a restart. Always reloads both layers so the
+    /// spawned in `initialized`). Settings take effect immediately except
+    /// the PHP target, which requires a restart. Always reloads both layers so the
     /// project one keeps overriding the global one no matter which file
     /// changed.
     ///
@@ -530,6 +538,8 @@ impl Backend {
         if self.inlay_hint_kinds() != previous_hint_kinds {
             self.request_inlay_hint_refresh_detached();
         }
+
+        self.check_php_target_change(root);
 
         // Resolved classes and completions may depend on config-driven
         // behaviour (e.g. `magic-properties`), so both must be
@@ -623,8 +633,7 @@ impl Backend {
         let is_tempest = self.is_tempest_project();
         let is_yii = self.is_yii_project();
 
-        // Create, change, and delete: what every watcher but the two
-        // Composer ones asks for.
+        // Creation and deletion also change which PHP target can be detected.
         let watch_all = WatchKind::Create | WatchKind::Change | WatchKind::Delete;
 
         // Patterns the workspace folders are watched with. Each one is
@@ -638,8 +647,8 @@ impl Backend {
             ("**/*.php".to_string(), watch_all),
             ("**/*.{yaml,yml,xml}".to_string(), watch_all),
             ("**/*.{yaml,yml,xml}.dist".to_string(), watch_all),
-            ("**/composer.json".to_string(), WatchKind::Change),
-            ("**/composer.lock".to_string(), WatchKind::Change),
+            ("**/composer.json".to_string(), watch_all),
+            ("**/composer.lock".to_string(), watch_all),
             ("**/.phpantom.toml".to_string(), watch_all),
         ]);
         if is_symfony {

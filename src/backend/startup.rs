@@ -282,18 +282,11 @@ impl Backend {
 
             // Detect the target PHP version.  The config file override
             // takes precedence; otherwise fall back to composer.json.
-            let php_version = self
-                .config()
-                .php
-                .version
-                .as_deref()
-                .and_then(crate::types::PhpVersion::from_composer_constraint)
-                .unwrap_or_else(|| {
-                    composer_package
-                        .as_ref()
-                        .and_then(composer::detect_php_version_from_package)
-                        .unwrap_or_default()
-                });
+            let target = crate::php_target::resolve(&self.config(), composer_package.as_ref());
+            for warning in target.warnings {
+                self.warn_php_target(warning);
+            }
+            let php_version = target.version;
             self.set_php_version(php_version);
 
             // ── Create a progress token for indexing feedback ────────

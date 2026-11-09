@@ -1,0 +1,12 @@
+{
+  "controls": [
+    { "id": "trait_alias", "type": "'trait'", "value": ["string", "trait"] },
+    { "id": "closure_capture", "type": "'captured'", "value": ["string", "captured"] },
+    { "id": "long_array", "type": "42", "value": ["integer", 42] },
+    { "id": "short_array", "type": "42", "value": ["integer", 42] },
+    { "id": "finally", "type": "'finally'", "value": ["string", "finally"] },
+    { "id": "foreach_list", "type": "'listed'", "value": ["string", "listed"] },
+    { "id": "class_name", "type": "class-string<AuditClassName>", "value": ["string", "AuditClassName"] },
+    { "id": "empty_expression", "type": "bool", "value": ["boolean", true] }
+  ]
+}

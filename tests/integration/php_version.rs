@@ -46,10 +46,191 @@ fn parse_major_only() {
 }
 
 #[test]
-fn parse_range_takes_first() {
-    // ">=8.0 <8.4" → first match wins → 8.0
+fn parse_range_uses_the_lowest_matching_family() {
     let v = PhpVersion::from_composer_constraint(">=8.0 <8.4").unwrap();
     assert_eq!(v, PhpVersion::new(8, 0));
+}
+
+#[tokio::test]
+async fn php_target_restart_keeps_types_and_edits_consistent_with_cli() {
+    use crate::common;
+    use std::collections::HashMap;
+    use tower_lsp_server::{LanguageServer, gen_lsp_types::*};
+
+    let dir = tempfile::tempdir().unwrap();
+    let root = dunce::canonicalize(dir.path()).unwrap();
+    let path = root.join("target.php");
+    let uri: Uri = common::file_uri(&path).parse().unwrap();
+    let text = "<?php\n$value = target_value();\n$value;\nclass TargetAccessor {\n/** @var string */\nprivate $name;\n}\n$probe='10' . 1 + 2;\n";
+    let stub = "<?php\nuse JetBrains\\PhpStorm\\Internal\\LanguageLevelTypeAware;\n#[LanguageLevelTypeAware(['8.0' => 'int'], default: 'string')]\nfunction target_value() {}\n";
+    for (major, minor) in [(5, 5), (8, 5), (5, 6), (5, 5)] {
+        std::fs::write(
+            root.join(".phpantom.toml"),
+            format!("[php]\nversion = \"{major}.{minor}\"\n"),
+        )
+        .unwrap();
+        std::fs::write(&path, text).unwrap();
+        let backend = Backend::new_test_with_all_stubs(
+            HashMap::new(),
+            HashMap::from([("target_value", stub)]),
+            HashMap::new(),
+        );
+        common::initialize_with_options(&backend, &root, None).await;
+        common::open_php(&backend, &uri, text).await;
+        assert_eq!(backend.php_version(), PhpVersion::new(major, minor));
+        let expected = if major == 5 { "string" } else { "int" };
+        assert_eq!(
+            backend
+                .find_or_load_function(&["target_value"])
+                .unwrap()
+                .return_type_str()
+                .as_deref(),
+            Some(expected)
+        );
+        let pos = common::position_of_last(text, "$value;");
+        let hover = common::markup_hover_at(&backend, &uri, pos.line, pos.character + 2).await;
+        assert!(hover.contains(&format!("$value = {expected}\n")), "{hover}");
+        let property = common::position_of(text, "$name;");
+        let actions =
+            common::code_actions_via_server(&backend, &uri, Range::new(property, property))
+                .await
+                .unwrap();
+        let action = common::find_action_titled(&actions, "Generate setter").unwrap();
+        let generated = common::apply_workspace_edit(text, action.edit.as_ref().unwrap());
+        assert_eq!(generated.contains("): self"), major >= 7, "{generated}");
+        let formatted = backend
+            .formatting(DocumentFormattingParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                options: FormattingOptions {
+                    tab_size: 4,
+                    insert_spaces: true,
+                    ..Default::default()
+                },
+                work_done_progress_params: WorkDoneProgressParams::default(),
+            })
+            .await
+            .unwrap()
+            .unwrap();
+        let formatted = common::apply_edits(text, &formatted);
+        assert_eq!(
+            phpantom_lsp::format_cli::run(phpantom_lsp::format_cli::FormatOptions {
+                workspace_root: root.clone(),
+                path_filters: vec![path.clone()],
+                check: false,
+                indent: "    ".into(),
+                use_colour: false,
+                output_format: phpantom_lsp::analyse::OutputFormat::Table,
+                global_config: None,
+            }),
+            0
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), formatted);
+
+        // A config watcher must leave both cached and newly requested answers on the active target.
+        std::fs::write(root.join(".phpantom.toml"), "[php]\nversion = \"7.4\"\n").unwrap();
+        backend
+            .did_change_watched_files(DidChangeWatchedFilesParams {
+                changes: vec![FileEvent {
+                    uri: common::file_uri(&root.join(".phpantom.toml"))
+                        .parse()
+                        .unwrap(),
+                    kind: FileChangeType::Changed,
+                }],
+            })
+            .await;
+        assert_eq!(backend.php_version(), PhpVersion::new(major, minor));
+        assert_eq!(
+            backend
+                .find_or_load_function(&["target_value"])
+                .unwrap()
+                .return_type_str()
+                .as_deref(),
+            Some(expected)
+        );
+    }
+}
+
+#[tokio::test]
+async fn php_target_lsp_selects_composer_constraints_and_explicit_overrides() {
+    use crate::common;
+    for (config, composer, expected) in [
+        (None, Some(r#"{"require":{"php":"^8.0 || ^5.5"}}"#), (5, 5)),
+        (
+            None,
+            Some(r#"{"config":{"platform":{"php":"5.6.40"}},"require":{"php":"^8.0"}}"#),
+            (5, 6),
+        ),
+        (Some("5.5"), Some(r#"{"require":{"php":"^8.0"}}"#), (5, 5)),
+        (
+            Some("^5.5"),
+            Some(r#"{"require":{"php":"<7 >=5.6"}}"#),
+            (5, 6),
+        ),
+        (None, None, (8, 5)),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dunce::canonicalize(dir.path()).unwrap();
+        if let Some(config) = config {
+            std::fs::write(
+                root.join(".phpantom.toml"),
+                format!("[php]\nversion = \"{config}\"\n"),
+            )
+            .unwrap();
+        }
+        if let Some(composer) = composer {
+            std::fs::write(root.join("composer.json"), composer).unwrap();
+        }
+        let backend = Backend::new_test();
+        common::initialize_with_options(&backend, &root, None).await;
+        assert_eq!(
+            backend.php_version(),
+            PhpVersion::new(expected.0, expected.1)
+        );
+    }
+}
+
+#[tokio::test]
+#[ignore = "Manual measurement of target selection, startup, cached hover, and cache entry counts"]
+async fn php_target_cost_sample() {
+    use crate::common;
+    use std::time::Instant;
+    for requirement in ["5.5", "8.5", "5.6", "^8.0 || ^5.5"] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dunce::canonicalize(dir.path()).unwrap();
+        std::fs::write(
+            root.join("composer.json"),
+            serde_json::json!({"require":{"php":requirement}}).to_string(),
+        )
+        .unwrap();
+        let path = root.join("probe.php");
+        let text = "<?php\n$value = new DateTime();\n$value;\n";
+        std::fs::write(&path, text).unwrap();
+        let started = Instant::now();
+        let backend = Backend::new_test_with_full_stubs();
+        common::initialize_with_options(&backend, &root, None).await;
+        let startup = started.elapsed();
+        let uri = common::file_uri(&path).parse().unwrap();
+        common::open_php(&backend, &uri, text).await;
+        common::markup_hover_at(&backend, &uri, 2, 2).await;
+        let mut timings = Vec::with_capacity(100);
+        for _ in 0..100 {
+            let started = Instant::now();
+            let hover = common::markup_hover_at(&backend, &uri, 2, 2).await;
+            timings.push(started.elapsed());
+            assert!(hover.contains("DateTime"));
+        }
+        timings.sort_unstable();
+        eprintln!(
+            "target={requirement:?} startup={startup:?} hover_p50={:?} hover_p95={:?} cached_classes={} cached_functions={} parsed_files={} stub_functions={} stub_constants={}",
+            timings[50],
+            timings[95],
+            backend.fqn_class_index().read().len(),
+            backend.global_functions().read().len(),
+            backend.parsed_uris().read().len(),
+            backend.stub_function_index_mut().len(),
+            backend.stub_constant_index().len()
+        );
+    }
 }
 
 #[test]

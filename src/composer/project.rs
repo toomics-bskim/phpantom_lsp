@@ -38,22 +38,7 @@ pub fn detect_php_version(workspace_root: &Path) -> Option<PhpVersion> {
 /// constraint.  The caller should fall back to [`PhpVersion::default`]
 /// in that case.
 pub fn detect_php_version_from_package(package: &ComposerPackage) -> Option<PhpVersion> {
-    // 1. config.platform.php — exact version string like "8.3.1"
-    if let Some(platform_val) = package.config.as_ref().and_then(|c| c.platform.get("php"))
-        && let mago_composer::ComposerPackageConfigPlatformValue::String(s) = platform_val
-        && let Some(ver) = PhpVersion::from_composer_constraint(s)
-    {
-        return Some(ver);
-    }
-
-    // 2. require.php — constraint string like "^8.4", ">=8.0"
-    if let Some(require_php) = package.require.get("php")
-        && let Some(ver) = PhpVersion::from_composer_constraint(require_php)
-    {
-        return Some(ver);
-    }
-
-    None
+    crate::php_target::from_package(package, &mut Vec::new())
 }
 
 /// Check whether a package name appears in `composer.json`'s `require-dev`.

@@ -1,0 +1,32 @@
+/// Settings for the lexer.
+#[derive(Debug, Clone, Copy)]
+pub struct LexerSettings {
+    /// Whether to enable short open tags (`<?`).
+    ///
+    /// When enabled (default), `<?` is treated as a short open tag that switches to PHP scripting mode.
+    /// When disabled, only `<?php` and `<?=` are recognized as valid PHP open tags.
+    ///
+    /// This corresponds to PHP's `short_open_tag` ini directive.
+    pub enable_short_tags: bool,
+}
+
+/// Settings for the parser.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ParserSettings {
+    /// Source language version, used for version-sensitive operator binding.
+    pub php_version: mago_php_version::PHPVersion,
+    /// Settings for the lexer.
+    pub lexer: LexerSettings,
+    /// Keep unfinished bodies and lists at EOF for editor queries.
+    /// Missing delimiters still produce parse errors.
+    pub recover_incomplete: bool,
+    /// Drop whitespace trivia that no comment precedes within the same token gap.
+    /// Docblock and pragma lookups only ever read whitespace that follows a comment.
+    pub elide_detached_whitespace: bool,
+}
+
+impl Default for LexerSettings {
+    fn default() -> Self {
+        Self { enable_short_tags: true }
+    }
+}

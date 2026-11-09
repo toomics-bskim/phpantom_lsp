@@ -285,12 +285,16 @@ pub fn removed_stub_names(
 /// `php_version >= X.Y`.
 fn docblock_removed_at(docblock: &str, php_version: crate::types::PhpVersion) -> bool {
     docblock.lines().any(|line| {
-        let trimmed = line.trim().trim_start_matches('*').trim();
+        let trimmed = line
+            .trim()
+            .trim_start_matches("/**")
+            .trim_start_matches('*')
+            .trim();
         trimmed
             .strip_prefix("@removed")
             .map(str::trim_start)
             .filter(|rest| !rest.is_empty())
-            .and_then(crate::types::PhpVersion::from_composer_constraint)
+            .and_then(crate::types::PhpVersion::from_metadata)
             .is_some_and(|ver| php_version >= ver)
     })
 }
@@ -301,6 +305,13 @@ pub enum StubSymbolKind {
     Function,
     Class,
     Constant,
+}
+
+#[derive(Default)]
+pub(crate) struct FilteredStubEntries {
+    pub(crate) classes: Vec<(String, &'static str)>,
+    pub(crate) functions: Vec<(String, &'static str)>,
+    pub(crate) constants: Vec<(&'static str, &'static str)>,
 }
 
 /// Find the earliest declaration keyword in `text` and return the name

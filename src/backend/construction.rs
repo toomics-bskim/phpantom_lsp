@@ -108,6 +108,7 @@ impl BackendState {
             stub_index: Arc::new(RwLock::new(stubs.classes)),
             stub_function_index: Arc::new(RwLock::new(blade::with_marker_stubs(stubs.functions))),
             stub_constant_index: Arc::new(RwLock::new(stubs.constants)),
+            filtered_stub_entries: Mutex::new(stubs::FilteredStubEntries::default()),
             external_stubs: Arc::new(RwLock::new(Arc::default())),
             has_external_stubs: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             resolved_class_cache,

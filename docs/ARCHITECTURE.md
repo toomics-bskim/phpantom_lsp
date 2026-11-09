@@ -165,6 +165,14 @@ project for PHP parsing and type representation:
 | `mago-phpdoc-syntax`  | PHPDoc parsing, including the PHPStan/Psalm type mini-language |
 | `mago-syntax`         | PHP source to CST                                          |
 
+The root Cargo manifest patches `mago-syntax` and `mago-formatter` with
+the source copies in [`third_party/mago`](../third_party/mago/README.md).
+They share version-sensitive concatenation precedence for built-in
+formatting. The formatter passes its target into `ParserSettings`;
+other parser callers still use the modern default until their source
+version is propagated. Keep stub parsing and project source parsing
+distinct when extending that contract.
+
 `mago-phpdoc-syntax` parses a docblock comment and the type expressions
 embedded in its tags in one pass. `src/docblock/parser.rs` adapts its CST
 to the owned `DocblockInfo` / `TagInfo` pair the rest of the codebase
@@ -828,20 +836,30 @@ An embedded stub has no file to open, so a jump to a built-in class, member, fun
 
 phpstorm-stubs annotate functions, methods, and parameters with `#[PhpStormStubsElementAvailable]` attributes to indicate which PHP versions they apply to. For example, `array_map` has two variants of its second parameter: `array $array` (from PHP 8.0) and an untyped `$arrays` (PHP 5.3 to 7.4). Without filtering, both appear in signatures.
 
-PHPantom detects the target PHP version during `initialized`:
+`php_target::resolve` selects the target for both LSP `initialized` and
+CLI project opening:
 
-1. Read `config.platform.php` from `composer.json` (explicit platform override).
-2. Fall back to `require.php` from `composer.json` (e.g. `"^8.4"` → 8.4).
-3. Default to PHP 8.5 when neither is available.
+1. Use the merged `[php] version` override, if valid.
+2. Read `config.platform.php` from `composer.json` (exact platform override).
+3. Select the lowest supported family intersecting `require.php`, using
+   `semver-php`'s Composer constraint and interval implementation.
+4. Default to PHP 8.5 when none is usable, reporting invalid inputs.
 
 The detected version is stored on the `Backend` as a `PhpVersion(major, minor)`.
+It is fixed after initialization. Config and root Composer file watchers
+compare the newly requested target with it and show a restart notice;
+they never change the target under parsed files or in-flight requests.
+Only the embedded entries removed during initial selection are retained
+for restoration if construction selects a different target before indexing.
+This avoids a second copy of the full stub maps. Stub metadata uses the
+allocation-free numeric version parser, not the Composer constraint solver.
 
 When parsing stubs (both class stubs via `find_or_load_class` and function stubs via `find_or_load_function`), the PHP version is passed through `DocblockCtx.php_version` to the extraction functions. Four filtering points apply:
 
 - **Function-level:** `extract_functions_from_statements` checks the function's `#[PhpStormStubsElementAvailable]` attribute. If the version range excludes the target, the entire function is skipped. This handles duplicate function definitions (e.g. `array_combine` has separate signatures for PHP ≤7.4 and ≥8.0).
 - **Method-level:** `extract_class_like_members` applies the same check to methods. For example, `SplFixedArray::__serialize` (from PHP 8.2) is excluded when targeting PHP 8.1.
 - **Parameter-level:** `extract_parameters` filters individual parameters. For example, `array_map`'s untyped `$arrays` parameter (PHP 5.3–7.4) is excluded when targeting PHP 8.0+, leaving only the typed `array $array`.
-- **Constant-level:** `set_php_version` calls `is_stub_constant_removed` to evict constants whose `@removed X.Y` tag indicates they were removed at or before the target version (e.g. `MCRYPT_ENCRYPT` with `@removed 7.2`).
+- **Constant-level:** `set_php_version` uses `removed_stub_names` to evict constants whose `@removed X.Y` tag indicates they were removed at or before the target version (e.g. `MCRYPT_ENCRYPT` with `@removed 7.2`).
 
 The attribute supports named arguments (`from: '8.0'`, `to: '7.4'`) and a positional argument (`'8.1'` treated as `from`). Both bounds are inclusive. A missing bound means unbounded in that direction.
 
