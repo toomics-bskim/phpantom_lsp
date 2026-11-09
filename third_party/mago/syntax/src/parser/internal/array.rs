@@ -67,7 +67,7 @@ where
                 ArrayElement::Value(ValueArrayElement { value })
             }
             _ => {
-                let expr = self.parse_expression()?;
+                let expr = self.parse_key_or_value_expression(Precedence::Lowest)?;
 
                 match self.stream.peek_kind(0)? {
                     Some(T!["=>"]) => {

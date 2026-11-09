@@ -234,6 +234,23 @@ where
         }
     }
 
+    /// A speculative token cursor for ambiguous legacy names. Normal parsing
+    /// retains its four-token ring; this cursor neither grows it nor consumes
+    /// source/trivia from the real stream.
+    pub(crate) fn preview_kinds(&self) -> impl Iterator<Item = Result<TokenKind, ParseError>> + '_ {
+        let mut lexer = self.lexer.clone();
+        (0..self.buffer.len())
+            .filter_map(|index| self.buffer.get(index).map(|token| Ok(token.kind)))
+            .chain(std::iter::from_fn(move || loop {
+                match lexer.advance()? {
+                    Ok(token) if matches!(token.kind, TokenKind::Whitespace | TokenKind::HashComment
+                        | TokenKind::SingleLineComment | TokenKind::MultiLineComment | TokenKind::DocBlockComment) => {}
+                    Ok(token) => return Some(Ok(token.kind)),
+                    Err(error) => return Some(Err(error.into())),
+                }
+            }))
+    }
+
     /// Creates a `ParseError` for an unexpected token or EOF, given one or more expected kinds.
     #[inline]
     #[must_use]

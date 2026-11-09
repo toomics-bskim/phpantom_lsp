@@ -1,0 +1,497 @@
+[
+  {
+    "id": "variadic",
+    "minimum": "5.6",
+    "source": "<?php function f(...$args) {}\n"
+  },
+  {
+    "id": "unpacking",
+    "minimum": "5.6",
+    "source": "<?php function f($a) {} f(...array(1));\n"
+  },
+  {
+    "id": "power",
+    "minimum": "5.6",
+    "source": "<?php $x = 2 ** 3;\n"
+  },
+  {
+    "id": "power_assignment",
+    "minimum": "5.6",
+    "source": "<?php $x = 2; $x **= 3;\n"
+  },
+  {
+    "id": "constant_expression",
+    "minimum": "5.6",
+    "source": "<?php const A = 1 + 2;\n"
+  },
+  {
+    "id": "constant_array",
+    "minimum": "5.6",
+    "source": "<?php const A = array(1);\n"
+  },
+  {
+    "id": "class_constant_array",
+    "minimum": "5.6",
+    "source": "<?php class C { const A = [1]; }\n"
+  },
+  {
+    "id": "property_expression",
+    "minimum": "5.6",
+    "source": "<?php class C { public $x = 1 + 2; }\n"
+  },
+  {
+    "id": "default_expression",
+    "minimum": "5.6",
+    "source": "<?php function f($x = array(1 + 2)) {}\n"
+  },
+  {
+    "id": "static_expression",
+    "minimum": "5.6",
+    "source": "<?php function f() { static $x = 1 + 2; }\n"
+  },
+  {
+    "id": "constant_parentheses",
+    "minimum": "5.6",
+    "source": "<?php const A = (1);\n"
+  },
+  {
+    "id": "constant_not",
+    "minimum": "5.6",
+    "source": "<?php const A = !true;\n"
+  },
+  {
+    "id": "function_import",
+    "minimum": "5.6",
+    "source": "<?php use function A\\f;\n"
+  },
+  {
+    "id": "constant_import",
+    "minimum": "5.6",
+    "source": "<?php use const A\\B;\n"
+  },
+  {
+    "id": "return_type",
+    "minimum": "7.0",
+    "source": "<?php function f(): int { return 1; }\n"
+  },
+  {
+    "id": "coalesce",
+    "minimum": "7.0",
+    "source": "<?php $x = $a ?? 1;\n"
+  },
+  {
+    "id": "spaceship",
+    "minimum": "7.0",
+    "source": "<?php $x = 1 <=> 2;\n"
+  },
+  {
+    "id": "anonymous_class",
+    "minimum": "7.0",
+    "source": "<?php $x = new class {};\n"
+  },
+  {
+    "id": "group_import",
+    "minimum": "7.0",
+    "source": "<?php use A\\{B, C};\n"
+  },
+  {
+    "id": "typed_group_import",
+    "minimum": "7.0",
+    "source": "<?php use function A\\{f, g};\n"
+  },
+  {
+    "id": "yield_from",
+    "minimum": "7.0",
+    "source": "<?php function f() { yield from array(1); }\n"
+  },
+  {
+    "id": "generator_return",
+    "minimum": "7.0",
+    "source": "<?php function f() { return 1; yield 2; }\n"
+  },
+  {
+    "id": "closure_generator_return",
+    "minimum": "7.0",
+    "source": "<?php $f = function() { yield 1; return 2; };\n"
+  },
+  {
+    "id": "method_generator_return",
+    "minimum": "7.0",
+    "source": "<?php class C { function f() { yield 1; return 2; } }\n"
+  },
+  {
+    "id": "nullable",
+    "minimum": "7.1",
+    "source": "<?php function f(?DateTime $x) {}\n"
+  },
+  {
+    "id": "short_destructuring",
+    "minimum": "7.1",
+    "source": "<?php [$a] = array(1);\n"
+  },
+  {
+    "id": "keyed_destructuring",
+    "minimum": "7.1",
+    "source": "<?php list('x' => $x) = array('x' => 1);\n"
+  },
+  {
+    "id": "foreach_destructuring",
+    "minimum": "7.1",
+    "source": "<?php foreach (array(array(1)) as [$a]) {}\n"
+  },
+  {
+    "id": "constant_visibility",
+    "minimum": "7.1",
+    "source": "<?php class C { public const A = 1; }\n"
+  },
+  {
+    "id": "multicatch",
+    "minimum": "7.1",
+    "source": "<?php try {} catch (RuntimeException | LogicException $e) {}\n"
+  },
+  {
+    "id": "call_comma",
+    "minimum": "7.3",
+    "source": "<?php strlen('x',);\n"
+  },
+  {
+    "id": "list_reference",
+    "minimum": "7.3",
+    "source": "<?php $a = array(1); list(&$x) = $a;\n"
+  },
+  {
+    "id": "heredoc_indent",
+    "minimum": "7.3",
+    "source": "<?php $x = <<<TEXT\n  text\n  TEXT;\n\n"
+  },
+  {
+    "id": "nowdoc_indent",
+    "minimum": "7.3",
+    "source": "<?php $x = <<<'TEXT'\n  text\n  TEXT;\n\n"
+  },
+  {
+    "id": "heredoc_expression",
+    "minimum": "7.3",
+    "source": "<?php $x = [<<<TEXT\ntext\nTEXT, 1];\n"
+  },
+  {
+    "id": "arrow",
+    "minimum": "7.4",
+    "source": "<?php $x = fn($a) => $a;\n"
+  },
+  {
+    "id": "static_arrow",
+    "minimum": "7.4",
+    "source": "<?php $x = static fn($a) => $a;\n"
+  },
+  {
+    "id": "typed_arrow",
+    "minimum": "7.4",
+    "source": "<?php $x = fn($a): int => 1;\n"
+  },
+  {
+    "id": "typed_property",
+    "minimum": "7.4",
+    "source": "<?php class C { public int $x; }\n"
+  },
+  {
+    "id": "array_spread",
+    "minimum": "7.4",
+    "source": "<?php $x = [...array(1)];\n"
+  },
+  {
+    "id": "coalesce_assignment",
+    "minimum": "7.4",
+    "source": "<?php $x ??= 1;\n"
+  },
+  {
+    "id": "integer_separator",
+    "minimum": "7.4",
+    "source": "<?php $x = 1_000;\n"
+  },
+  {
+    "id": "float_separator",
+    "minimum": "7.4",
+    "source": "<?php $x = 1_000.25;\n"
+  },
+  {
+    "id": "union",
+    "minimum": "8.0",
+    "source": "<?php function f(DateTime|stdClass $x) {}\n"
+  },
+  {
+    "id": "promotion",
+    "minimum": "8.0",
+    "source": "<?php class C { function __construct(public $x) {} }\n"
+  },
+  {
+    "id": "nullsafe",
+    "minimum": "8.0",
+    "source": "<?php $x = $a?->b;\n"
+  },
+  {
+    "id": "nullsafe_call",
+    "minimum": "8.0",
+    "source": "<?php $x = $a?->b();\n"
+  },
+  {
+    "id": "named_argument",
+    "minimum": "8.0",
+    "source": "<?php strlen(string: 'x');\n"
+  },
+  {
+    "id": "parameter_comma",
+    "minimum": "8.0",
+    "source": "<?php function f($a,) {}\n"
+  },
+  {
+    "id": "closure_use_comma",
+    "minimum": "8.0",
+    "source": "<?php $a = 1; $f = function() use ($a,) {};\n"
+  },
+  {
+    "id": "noncapturing_catch",
+    "minimum": "8.0",
+    "source": "<?php try {} catch (Exception) {}\n"
+  },
+  {
+    "id": "throw_expression",
+    "minimum": "8.0",
+    "source": "<?php $x = $a ?? throw new Exception();\n"
+  },
+  {
+    "id": "match",
+    "minimum": "8.0",
+    "source": "<?php $x = match(1) { 1 => 2, default => 3 };\n"
+  },
+  {
+    "id": "static_return",
+    "minimum": "8.0",
+    "source": "<?php class C { function f(): static { return $this; } }\n"
+  },
+  {
+    "id": "enum",
+    "minimum": "8.1",
+    "source": "<?php enum E { case A; }\n"
+  },
+  {
+    "id": "readonly_property",
+    "minimum": "8.1",
+    "source": "<?php class C { public readonly int $x; }\n"
+  },
+  {
+    "id": "intersection",
+    "minimum": "8.1",
+    "source": "<?php function f(Countable&Iterator $x) {}\n"
+  },
+  {
+    "id": "callable",
+    "minimum": "8.1",
+    "source": "<?php $f = strlen(...);\n"
+  },
+  {
+    "id": "octal",
+    "minimum": "8.1",
+    "source": "<?php $x = 0o755;\n"
+  },
+  {
+    "id": "final_constant",
+    "minimum": "8.1",
+    "source": "<?php class C { final const A = 1; }\n"
+  },
+  {
+    "id": "new_default",
+    "minimum": "8.1",
+    "source": "<?php function f($x = new stdClass()) {}\n"
+  },
+  {
+    "id": "readonly_class",
+    "minimum": "8.2",
+    "source": "<?php readonly class C {}\n"
+  },
+  {
+    "id": "dnf",
+    "minimum": "8.2",
+    "source": "<?php function f((Countable&Iterator)|stdClass $x) {}\n"
+  },
+  {
+    "id": "typed_constant",
+    "minimum": "8.3",
+    "source": "<?php class C { const int A = 1; }\n"
+  },
+  {
+    "id": "hooks",
+    "minimum": "8.4",
+    "source": "<?php class C { public int $x { get => 1; } }\n"
+  },
+  {
+    "id": "asymmetric_visibility",
+    "minimum": "8.4",
+    "source": "<?php class C { public private(set) int $x; }\n"
+  },
+  {
+    "id": "final_property",
+    "minimum": "8.4",
+    "source": "<?php class C { final public int $x; }\n"
+  },
+  {
+    "id": "pipe",
+    "minimum": "8.5",
+    "source": "<?php $x = 'x' |> strlen(...);\n"
+  },
+  {
+    "id": "legacy_defaults",
+    "minimum": "5.5",
+    "source": "<?php function f($x = array(1, -2)) { static $y = array(1); } class C { public $x = array(1); const A = -1; }\n"
+  },
+  {
+    "id": "legacy_type_names",
+    "minimum": "5.5",
+    "source": "<?php function f(int $a, iterable $b, object $c, mixed $d, readonly $e) {}\n"
+  },
+  {
+    "id": "legacy_keywords",
+    "minimum": "5.5",
+    "source": "<?php function match($a) { return $a; } function fn() { return 1; } class Enum {} $x = true ? fn() : match(1);\n"
+  },
+  {
+    "id": "legacy_hash_comment",
+    "minimum": "5.5",
+    "source": "<?php #[Attribute(text: 'later syntax')]\nfunction f() {}\n"
+  },
+  {
+    "id": "docblock_types",
+    "minimum": "5.5",
+    "source": "<?php /** @param int|string $x @return list<int> */ function f($x) { return array(1); }\n"
+  },
+  {
+    "id": "nested_generator",
+    "minimum": "5.5",
+    "source": "<?php function f() { $g = function() { yield 1; }; return 1; }\n"
+  },
+  {
+    "id": "nested_return",
+    "minimum": "5.5",
+    "source": "<?php function f() { $g = function() { return 1; }; yield 1; return; }\n"
+  },
+  {
+    "id": "throw_statement",
+    "minimum": "5.5",
+    "source": "<?php throw new Exception();\n"
+  },
+  {
+    "id": "ordinary_heredoc",
+    "minimum": "5.5",
+    "source": "<?php $x = <<<TEXT\ntext\nTEXT;\n\n"
+  },
+  {
+    "id": "ordinary_nowdoc",
+    "minimum": "5.5",
+    "source": "<?php $x = <<<'TEXT'\ntext\nTEXT;\n\n"
+  },
+  {
+    "id": "function_named_match",
+    "minimum": "5.5",
+    "source": "<?php function match($x) {} match(array(1));\n"
+  },
+  {
+    "id": "class_named_match",
+    "minimum": "5.5",
+    "source": "<?php class Match {} $x = new Match();\n"
+  },
+  {
+    "id": "group_import_comma",
+    "minimum": "7.2",
+    "source": "<?php use A\\{B, C,};\n"
+  },
+  {
+    "id": "typed_group_import_comma",
+    "minimum": "7.2",
+    "source": "<?php use function A\\{f, g,};\n"
+  },
+  {
+    "id": "literal_instanceof",
+    "minimum": "7.3",
+    "source": "<?php $x = 1 instanceof stdClass;\n"
+  },
+  {
+    "id": "trait_constant",
+    "minimum": "8.2",
+    "source": "<?php trait T { const A = 1; }\n"
+  },
+  {
+    "id": "dynamic_constant",
+    "minimum": "8.3",
+    "source": "<?php class C { const A = 1; } $x = C::{'A'};\n"
+  },
+  {
+    "id": "new_dereference",
+    "minimum": "8.4",
+    "source": "<?php $x = new DateTime()->format('c');\n"
+  },
+  {
+    "id": "new_parenthesized",
+    "minimum": "5.5",
+    "source": "<?php $x = (new DateTime())->format('c');\n"
+  },
+  {
+    "id": "legacy_match_method",
+    "minimum": "5.5",
+    "source": "<?php class C { function match($x) { return $x; } } $x = (new C())->match(1);\n"
+  },
+  {
+    "id": "complex_match",
+    "minimum": "8.0",
+    "source": "<?php $x = match((function() { return 1; })()) { 1 => 2 };\n"
+  },
+  {
+    "id": "bare_readonly_property",
+    "minimum": "8.1",
+    "source": "<?php class C { readonly int $x; }\n"
+  },
+  {
+    "id": "legacy_complex_match_call",
+    "minimum": "5.5",
+    "source": "<?php function match($x) { return $x; } $x = match(array_map(function($v) { return $v; }, array(1)));\n"
+  },
+  {
+    "id": "legacy_fn_array_key",
+    "minimum": "5.5",
+    "source": "<?php function fn() { return 1; } $x = array(fn() => 2);\n"
+  },
+  {
+    "id": "legacy_fn_yield_key",
+    "minimum": "5.5",
+    "source": "<?php function fn() { return 1; } function f() { yield fn() => 2; }\n"
+  },
+  {
+    "id": "legacy_fn_conditional_key",
+    "minimum": "5.5",
+    "source": "<?php function fn() { return 1; } $x = array(true ? fn() : 0 => 2);\n"
+  },
+  {
+    "id": "array_parenthesized_arrow",
+    "minimum": "7.4",
+    "source": "<?php $x = [(fn($a) => $a)];\n"
+  },
+  {
+    "id": "array_static_arrow",
+    "minimum": "7.4",
+    "source": "<?php $x = [static fn($a) => $a];\n"
+  },
+  {
+    "id": "immediate_closure_call",
+    "minimum": "7.0",
+    "source": "<?php $x = (function() { return 1; })();\n"
+  },
+  {
+    "id": "parenthesized_callable",
+    "minimum": "7.0",
+    "source": "<?php $f = 'strlen'; $x = ($f)('x');\n"
+  },
+  {
+    "id": "returned_callable",
+    "minimum": "7.0",
+    "source": "<?php function f() { return 'strlen'; } $x = f()('x');\n"
+  }
+]

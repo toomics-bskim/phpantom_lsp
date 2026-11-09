@@ -371,7 +371,7 @@ impl Backend {
         out: &mut Vec<Diagnostic>,
     ) {
         let _lines = crate::text_position::PassLineTable::new(content);
-        // Four of these parse the file.  Without a shared cache each would
+        // Several of these parse the file. Without a shared cache each would
         // parse it again, on every keystroke; the guard makes them reuse one
         // AST.  A nested guard is a no-op, so the workspace and analyze paths
         // that already hold one are unaffected.
@@ -379,6 +379,7 @@ impl Backend {
         let _parse_guard = crate::parser::with_parse_cache(content);
 
         self.collect_syntax_error_diagnostics(uri_str, content, out);
+        self.collect_unsupported_syntax_diagnostics(uri_str, content, out);
         self.collect_unused_import_diagnostics(uri_str, content, out);
         self.collect_unused_variable_diagnostics(uri_str, content, out);
         self.collect_namespace_mismatch_diagnostics(uri_str, content, out);

@@ -182,6 +182,14 @@ needed. Short tags remain enabled; PHP 5 targets additionally recognize
 ASP and PHP script tags, assuming `asp_tags=1`. PHP 7+ treats those removed
 tags as HTML. This analysis policy does not read the host's `php.ini`.
 
+The fast diagnostic pass walks that shared CST for source capabilities and
+reports `unsupported_syntax` with the required PHP release. It does not
+resolve types or inspect PHPDoc; stub descriptions use their modern source
+version. Unambiguous newer constructs retain their CST on older targets,
+so diagnostics do not remove the symbols needed for navigation. Ambiguous
+legacy calls named `fn` or `match` use a speculative token cursor, without
+growing the normal parser's lookahead buffer or altering source offsets.
+
 `mago-phpdoc-syntax` parses a docblock comment and the type expressions
 embedded in its tags in one pass. `src/docblock/parser.rs` adapts its CST
 to the owned `DocblockInfo` / `TagInfo` pair the rest of the codebase

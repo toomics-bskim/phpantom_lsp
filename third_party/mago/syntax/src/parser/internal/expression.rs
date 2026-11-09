@@ -49,7 +49,23 @@ where
     A: Arena,
 {
     pub(crate) fn parse_expression(&mut self) -> Result<&'arena Expression<'arena>, ParseError> {
-        self.parse_expression_with_precedence(Precedence::Lowest)
+        let previous = std::mem::replace(&mut self.state.allow_key_arrow, false);
+        let result = self.parse_expression_with_precedence(Precedence::Lowest);
+        self.state.allow_key_arrow = previous;
+        result
+    }
+
+    pub(crate) fn parse_key_or_value_expression(
+        &mut self,
+        precedence: Precedence,
+    ) -> Result<&'arena Expression<'arena>, ParseError> {
+        let previous = std::mem::replace(
+            &mut self.state.allow_key_arrow,
+            self.php_version < mago_php_version::PHPVersion::PHP74,
+        );
+        let result = self.parse_expression_with_precedence(precedence);
+        self.state.allow_key_arrow = previous;
+        result
     }
 
     /// Parses an expression optionally prefixed with `&` (reference), for positions where
@@ -211,6 +227,30 @@ where
         let token = self.stream.lookahead(0)?.ok_or_else(|| self.stream.unexpected(None, &[]))?;
         let next = self.stream.peek_kind(1)?;
 
+        if self.php_version < mago_php_version::PHPVersion::PHP80
+            && !self.state.within_string_interpolation && precedence != Precedence::New
+        {
+            let keyword_offset = usize::from(token.kind == T!["static"]);
+            if let Some(keyword) = self.stream.lookahead(keyword_offset)?
+                && keyword.kind == T![Identifier]
+            {
+                if keyword.value.eq_ignore_ascii_case(b"fn")
+                    && (keyword_offset != 0 || !self.state.allow_key_arrow)
+                    && self.is_future_function_syntax(keyword_offset, false)?
+                {
+                    return Ok(self.arena.alloc(Expression::ArrowFunction(
+                        self.parse_arrow_function_with_attributes(crate::cst::sequence::Sequence::empty())?,
+                    )));
+                }
+                if keyword_offset == 0
+                    && keyword.value.eq_ignore_ascii_case(b"match")
+                    && self.is_future_function_syntax(0, true)?
+                {
+                    return Ok(self.arena.alloc(Expression::Match(self.parse_match()?)));
+                }
+            }
+        }
+
         let is_call = precedence != Precedence::New && matches!(next, Some(T!["("]));
         let is_call_or_access =
             is_call || matches!(next, Some(T![LeftBracket | ColonColon | MinusGreaterThan | QuestionMinusGreaterThan]));
@@ -253,7 +293,7 @@ where
             (T!["\""] | T!["<<<"] | T!["`"], ..) => Expression::CompositeString(self.parse_string()?),
             (T!["("], _) => Expression::Parenthesized(Parenthesized {
                 left_parenthesis: self.stream.eat_span(T!["("])?,
-                expression: self.parse_expression_with_precedence(Precedence::Lowest)?,
+                expression: self.parse_expression()?,
                 right_parenthesis: self.parse_closing_span(T![")"])?,
             }),
             (T!["match"], Some(T!["("])) => Expression::Match(self.parse_match()?),
@@ -343,6 +383,51 @@ where
             }
             _ => return Err(self.stream.unexpected(Some(next), &[T!["function"], T!["fn"], T!["static"]])),
         })
+    }
+
+    /// Distinguish legacy calls named `fn`/`match` from newer expressions
+    /// without changing the tokens, source offsets, or legacy name lookup.
+    fn is_future_function_syntax(&mut self, offset: usize, is_match: bool) -> Result<bool, ParseError> {
+        let mut tokens = self.stream.preview_kinds().skip(offset + 1);
+        let mut next = tokens.next().transpose()?;
+        if !is_match && next == Some(T!["&"]) {
+            next = tokens.next().transpose()?;
+        }
+        if next != Some(T!["("]) {
+            return Ok(false);
+        }
+        let mut depth = 1usize;
+        loop {
+            match tokens.next().transpose()? {
+                Some(T!["("]) => depth += 1,
+                Some(T![")"]) => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                None => return Ok(false),
+                _ => {}
+            }
+        }
+        next = tokens.next().transpose()?;
+        if is_match {
+            return Ok(next == Some(T!["{"]));
+        }
+        if next == Some(T![":"]) {
+            next = tokens.next().transpose()?;
+            while let Some(kind) = next {
+                if kind.is_reserved_identifier()
+                    || matches!(kind, T![Identifier | QualifiedIdentifier | FullyQualifiedIdentifier
+                        | "?" | "|" | "&" | "(" | ")"])
+                {
+                    next = tokens.next().transpose()?;
+                } else {
+                    break;
+                }
+            }
+        }
+        Ok(next == Some(T!["=>"]))
     }
 
     fn parse_postfix_expression(

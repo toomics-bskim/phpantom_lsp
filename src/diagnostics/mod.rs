@@ -60,6 +60,8 @@
 //!
 //! ## Phase 1 — fast (no type resolution)
 //!
+//! - **Unsupported syntax** — compare source CST capabilities with the
+//!   selected PHP version. Stub descriptions retain their modern grammar.
 //! - **Syntax error diagnostics** — surface parse errors from the Mago
 //!   parser as Error-severity diagnostics.  The most fundamental
 //!   diagnostic: without it, a user with a typo gets no feedback until
@@ -329,6 +331,7 @@ pub(crate) mod unknown_functions;
 pub(crate) mod unknown_members;
 pub(crate) mod unreachable_code;
 pub(crate) mod unresolved_member_access;
+mod unsupported_syntax;
 mod unused_imports;
 pub(crate) mod unused_parameters;
 pub(crate) mod unused_private_members;

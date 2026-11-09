@@ -13,6 +13,22 @@ where
     /// Expects and consumes a keyword token.
     #[inline]
     pub(crate) fn expect_keyword(&mut self, kind: TokenKind) -> Result<Keyword<'arena>, ParseError> {
+        // The legacy lexer keeps future keywords usable as identifiers. A
+        // caller that has recognized their unambiguous modern syntax can
+        // still retain that CST for editor recovery and version diagnostics.
+        let spelling: &[u8] = match kind {
+            TokenKind::Fn => b"fn",
+            TokenKind::Match => b"match",
+            TokenKind::Enum => b"enum",
+            _ => b"",
+        };
+        if self.php_version < mago_php_version::PHPVersion::PHP81 && !spelling.is_empty()
+            && self.stream.lookahead(0)?.is_some_and(|token| {
+                token.kind == TokenKind::Identifier && token.value.eq_ignore_ascii_case(spelling)
+            })
+        {
+            return self.expect_any_keyword();
+        }
         let token = self.stream.eat(kind)?;
         Ok(Keyword { span: token.span_for(self.stream.file_id()), value: token.value })
     }

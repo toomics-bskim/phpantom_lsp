@@ -36,6 +36,18 @@ where
 
     fn parse_statement_inner(&mut self) -> Result<Statement<'arena>, ParseError> {
         let token = self.stream.lookahead(0)?.ok_or_else(|| self.stream.unexpected(None, &[]))?;
+        if self.php_version < mago_php_version::PHPVersion::PHP81 && token.kind == T![Identifier] {
+            if token.value.eq_ignore_ascii_case(b"enum")
+                && self.stream.peek_kind(1)? == Some(T![Identifier])
+            {
+                return Ok(Statement::Enum(self.parse_enum_with_attributes(Sequence::empty())?));
+            }
+            if token.value.eq_ignore_ascii_case(b"readonly")
+                && matches!(self.stream.peek_kind(1)?, Some(T!["class" | "abstract" | "final"]))
+            {
+                return Ok(Statement::Class(self.parse_class_with_attributes(Sequence::empty())?));
+            }
+        }
         Ok(match token.kind {
             T![InlineText | InlineShebang] => Statement::Inline(self.parse_inline()?),
             T!["<?php"] | T!["<?"] => Statement::OpeningTag(self.parse_opening_tag()?),

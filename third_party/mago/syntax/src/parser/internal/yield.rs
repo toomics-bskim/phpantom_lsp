@@ -44,7 +44,7 @@ where
             return Ok(Yield::Value(YieldValue { r#yield, value: None }));
         }
 
-        let key_or_value = self.parse_expression_with_precedence(Precedence::Yield)?;
+        let key_or_value = self.parse_key_or_value_expression(Precedence::Yield)?;
 
         Ok(if matches!(self.stream.peek_kind(0)?, Some(T!["=>"])) {
             Yield::Pair(YieldPair {

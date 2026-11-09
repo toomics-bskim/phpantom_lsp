@@ -26,6 +26,7 @@ expects to be declared somewhere, but is not, is always `invalid_`.
 | Identifier | Severity | Reports |
 | --- | --- | --- |
 | `syntax_error` | Error | Code that does not parse. |
+| `unsupported_syntax` | Error | Syntax that requires a newer PHP version than the project targets. |
 | `unknown_class` | Warning | A class, interface, trait, or enum that cannot be found, including one named by the type of a value whose member is used. |
 | `unknown_function` | Error | A function call that cannot be resolved. |
 | `unknown_member` | Warning | A method, property, or constant the resolved class does not have. `magic-properties` widens it to classes with `__get`. |

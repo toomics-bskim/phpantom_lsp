@@ -31,6 +31,14 @@ are preserved in [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE)
 - `syntax/src/parser/internal/expression.rs`: use that mapping when binding
   infix operators and parsing concatenation's right operand; represent
   pre-PHP-8 curly offsets as array access with original delimiter spans.
+- `syntax/src/parser/internal/{common,expression,modifier,statement}.rs`:
+  retain unambiguous modern constructs on older targets for capability
+  diagnostics, without reserving legacy identifier spellings. The lexer
+  and token stream provide a speculative cursor for ambiguous calls; the
+  ordinary parser keeps its fixed lookahead buffer.
+- Array and generator keys retain legacy calls named `fn` before their
+  `=>` separator. Class-member parsing recognizes contextual readonly
+  modifiers while preserving older class-like type names.
 - `formatter/src/lib.rs`: use the formatter's target for parsing, including
   when callers supply custom parser settings. Range formatting shares it.
 - `formatter/src/internal/parens.rs`: use the same precedence when deciding
@@ -40,12 +48,12 @@ The change follows the [PHP concatenation precedence RFC](https://wiki.php.net/r
 Legacy lexical rules follow the [PHP 5.6 scanner](https://github.com/php/php-src/blob/PHP-5.6/Zend/zend_language_scanner.l),
 the [PHP 7 migration guide](https://www.php.net/manual/en/migration70.incompatible.php),
 and the [PHP 8 migration guide](https://www.php.net/manual/en/migration80.incompatible.php).
-These are behavior references; no PHP source was copied. Unsupported-feature
-diagnostics and older runtime semantics remain separate work.
-There is no extra parsing pass or post-format text replacement.
+These are behavior references; no PHP source was copied. PHPantom's source
+capability diagnostics consume the same CST. Older runtime semantics remain
+separate work. There is no extra parsing pass or post-format text replacement.
 
-Regression coverage lives in `tests/legacy_compatibility.rs` and
-`tests/compatibility/formatting.json`; see the
+Regression coverage lives in `tests/legacy_compatibility.rs`,
+`tests/compatibility/formatting.json`, and `tests/compatibility/syntax.json`; see the
 [runtime check instructions](../../tests/compatibility/README.md).
 When upgrading Mago, compare these files with the new upstream source,
 retain the patch until upstream provides equivalent behavior, and run the

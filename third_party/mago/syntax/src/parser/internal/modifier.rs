@@ -18,7 +18,19 @@ where
         Ok(Sequence::new(modifiers))
     }
 
+    pub(crate) fn is_legacy_readonly_modifier(&mut self) -> Result<bool, ParseError> {
+        Ok(self.php_version < mago_php_version::PHPVersion::PHP81
+            && self.stream.lookahead(0)?.is_some_and(|token| {
+                token.kind == T![Identifier] && token.value.eq_ignore_ascii_case(b"readonly")
+            })
+            && !matches!(self.stream.peek_kind(1)?,
+                Some(T!["$variable" | "(" | "::" | "=" | ";" | "|" | "&" | "..."]) | None))
+    }
+
     pub(crate) fn parse_optional_modifier(&mut self) -> Result<Option<Modifier<'arena>>, ParseError> {
+        if self.is_legacy_readonly_modifier()? {
+            return Ok(Some(Modifier::Readonly(self.expect_any_keyword()?)));
+        }
         Ok(Some(match self.stream.peek_kind(0)? {
             Some(T!["public"]) => Modifier::Public(self.expect_any_keyword()?),
             Some(T!["protected"]) => Modifier::Protected(self.expect_any_keyword()?),

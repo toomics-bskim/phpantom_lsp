@@ -736,7 +736,6 @@ async fn legacy_unopened_files_are_discovered_and_resolved_by_namespace() {
 }
 
 #[tokio::test]
-#[ignore = "The server does not yet report syntax introduced after the selected PHP version"]
 async fn legacy_targets_report_unsupported_syntax() {
     let audit = audit();
     for (version, id) in [
@@ -747,11 +746,206 @@ async fn legacy_targets_report_unsupported_syntax() {
         let uri = open(&backend, dir.path(), id, source(&audit, id)).await;
         let diagnostics = ready_diagnostics(&backend, &uri).await;
         assert!(
-            diagnostics
-                .iter()
-                .any(|d| common::message_text(&d.message).contains("PHP")
-                    && common::message_text(&d.message).contains("version")),
+            diagnostics.iter().any(
+                |d| d.code == Some(Code::String("unsupported_syntax".into()))
+                    && common::message_text(&d.message).contains("version")
+            ),
             "{id}: expected an unsupported-version diagnostic, got {diagnostics:?}"
         );
+    }
+}
+
+#[test]
+fn syntax_capabilities_follow_release_boundaries() {
+    let cases: Vec<Value> =
+        serde_json::from_str(include_str!("compatibility/syntax.json")).unwrap();
+    let backend = Backend::new_test();
+    let root = tempfile::tempdir().unwrap();
+    let uri = common::file_uri(&root.path().join("syntax.php"));
+    for version in PhpVersion::TARGETS {
+        backend.set_php_version(version);
+        let mut exported = Vec::new();
+        for case in &cases {
+            let minimum = PhpVersion::from_exact(case["minimum"].as_str().unwrap()).unwrap();
+            // Controls deliberately use names that became reserved later.
+            if minimum == PhpVersion::new(5, 5) && version.major != 5 {
+                continue;
+            }
+            let source = case["source"].as_str().unwrap();
+            backend.update_ast(&uri, source);
+            let mut syntax_errors = Vec::new();
+            backend.collect_syntax_error_diagnostics(&uri, source, &mut syntax_errors);
+            assert!(
+                syntax_errors.is_empty(),
+                "{} at {version}: {syntax_errors:?}",
+                case["id"]
+            );
+            let mut diagnostics = Vec::new();
+            backend.collect_unsupported_syntax_diagnostics(&uri, source, &mut diagnostics);
+            assert_eq!(
+                diagnostics.is_empty(),
+                version >= minimum,
+                "{} at {version}: {diagnostics:?}",
+                case["id"]
+            );
+            for diagnostic in &diagnostics {
+                assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::Error));
+                assert!(diagnostic.range.start < diagnostic.range.end);
+            }
+            exported.push(json!({"id": case["id"], "source": source, "lint": version >= minimum}));
+        }
+        if let Some(output) = std::env::var_os("PHPANTOM_COMPAT_OUTPUT") {
+            std::fs::create_dir_all(&output).unwrap();
+            std::fs::write(
+                Path::new(&output).join(format!("syntax-{version}.json")),
+                serde_json::to_vec_pretty(
+                    &json!({"target": version.to_string(), "cases": exported}),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        }
+    }
+}
+
+#[test]
+fn syntax_diagnostics_match_the_reference_audit() {
+    let audit = audit();
+    let backend = Backend::new_test();
+    let root = tempfile::tempdir().unwrap();
+    let uri = common::file_uri(&root.path().join("audit.php"));
+    for version in [PhpVersion::new(5, 5), PhpVersion::new(5, 6)] {
+        backend.set_php_version(version);
+        let key = format!("php{}{}", version.major, version.minor);
+        for case in audit["cases"].as_array().unwrap() {
+            let source = case["source"].as_str().unwrap();
+            let mut diagnostics = Vec::new();
+            backend.collect_unsupported_syntax_diagnostics(&uri, source, &mut diagnostics);
+            assert_eq!(
+                diagnostics.is_empty(),
+                case[&key]["reference"]["lintExit"] == 0,
+                "{} at {version}: {diagnostics:?}",
+                case["id"]
+            );
+        }
+    }
+}
+
+#[tokio::test]
+async fn unsupported_syntax_agrees_with_cli_and_preserves_editor_positions() {
+    let (dir, backend) = project(PhpVersion::new(5, 5)).await;
+    let text = "<?php\r\n/* 한글 😀 */ function example(...$values) { return $values; }\r\nexample(1);\r\n";
+    let uri = open(&backend, dir.path(), "syntax", text).await;
+    let diagnostics = ready_diagnostics(&backend, &uri).await;
+    let unsupported: Vec<_> = diagnostics
+        .iter()
+        .filter(|d| d.code == Some(Code::String("unsupported_syntax".into())))
+        .collect();
+    assert_eq!(unsupported.len(), 1, "{diagnostics:?}");
+    assert_eq!(unsupported[0].range.start, common::position_of(text, "..."));
+    let position = common::position_of(text, "example(1)");
+    let target = common::goto_definition_at(&backend, &uri, position.line, position.character + 2)
+        .await
+        .unwrap();
+    let target = serde_json::to_value(target).unwrap();
+    let target = target.as_array().map_or(&target, |items| &items[0]);
+    assert_eq!(
+        target["range"]["start"],
+        json!(common::position_of(text, "example(..."))
+    );
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_phpantom_lsp"))
+        .args(["analyze", "--project-root"])
+        .arg(dir.path())
+        .args(["--format", "json", "--no-colour"])
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(
+        stdout.contains("unsupported_syntax"),
+        "CLI disagrees with LSP: {stdout}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        stdout.contains("Variadic parameters: requires PHP 5.6"),
+        "{stdout}"
+    );
+    let report: Value = serde_json::from_str(&stdout).unwrap();
+    let messages: Vec<_> = report["files"]
+        .as_object()
+        .unwrap()
+        .values()
+        .flat_map(|file| file["messages"].as_array().unwrap())
+        .filter(|message| message["identifier"] == "unsupported_syntax")
+        .collect();
+    assert_eq!(messages.len(), unsupported.len());
+    assert_eq!(
+        messages[0]["message"],
+        common::message_text(&unsupported[0].message)
+    );
+    assert_eq!(messages[0]["line"], unsupported[0].range.start.line + 1);
+
+    let mut stub_diagnostics = Vec::new();
+    backend.collect_unsupported_syntax_diagnostics(
+        "phpantom-stub:///test.php",
+        "<?php function f(): int {}",
+        &mut stub_diagnostics,
+    );
+    assert!(stub_diagnostics.is_empty());
+}
+
+#[tokio::test]
+async fn configured_stubs_keep_modern_syntax_on_legacy_targets() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("stubs")).unwrap();
+    std::fs::write(
+        dir.path().join(".phpantom.toml"),
+        "[php]\nversion = \"5.5\"\n[stubs]\npaths = [\"stubs\"]\n",
+    )
+    .unwrap();
+    let source = "<?php function modern_stub(int|string $x): mixed {}";
+    let path = dir.path().join("stubs/modern.php");
+    std::fs::write(&path, source).unwrap();
+    let backend = Backend::new_test();
+    common::initialize_with_options(&backend, &dunce::canonicalize(dir.path()).unwrap(), None)
+        .await;
+    let uri = common::file_uri(&dunce::canonicalize(&path).unwrap());
+    let mut diagnostics = Vec::new();
+    backend.collect_unsupported_syntax_diagnostics(&uri, source, &mut diagnostics);
+    assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    let project_uri = common::file_uri(&dir.path().join("source.php"));
+    backend.collect_unsupported_syntax_diagnostics(&project_uri, source, &mut diagnostics);
+    assert!(
+        !diagnostics.is_empty(),
+        "the same syntax in source must be diagnosed"
+    );
+}
+
+#[test]
+fn future_keyword_recovery_preserves_legacy_calls_and_type_names() {
+    let backend = Backend::new_test();
+    let root = tempfile::tempdir().unwrap();
+    let uri = common::file_uri(&root.path().join("keywords.php"));
+    for (version, source) in [
+        (
+            PhpVersion::new(5, 5),
+            "<?php function fn($a) {} function match($a) {} $x = true ? fn(array(1, array(2))) : match(3);",
+        ),
+        (
+            PhpVersion::new(5, 6),
+            "<?php function f(readonly &$x, readonly ...$y) {}",
+        ),
+        (
+            PhpVersion::new(8, 0),
+            "<?php function f(readonly|stdClass $x) {}",
+        ),
+        (PhpVersion::new(8, 0), "<?php class C { readonly $x; }"),
+    ] {
+        backend.set_php_version(version);
+        backend.update_ast(&uri, source);
+        let mut diagnostics = Vec::new();
+        backend.collect_syntax_error_diagnostics(&uri, source, &mut diagnostics);
+        backend.collect_unsupported_syntax_diagnostics(&uri, source, &mut diagnostics);
+        assert!(diagnostics.is_empty(), "{version}: {diagnostics:?}");
     }
 }

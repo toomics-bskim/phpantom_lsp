@@ -20,6 +20,17 @@ namespace Demo;
 
 use Demo\Scaffolding;
 
+// Try: copy this class into a project with [php] version = "5.5" in
+// .phpantom.toml. The ellipsis reports that variadic parameters need PHP 5.6.
+// With a PHP 5.6 or newer target, that diagnostic disappears.
+class PhpVersionDiagnosticsDemo
+{
+    public function countItems(...$items)
+    {
+        return count($items);
+    }
+}
+
 // ── Deprecation Messages ────────────────────────────────────────────────────
 // Hover over deprecated members to see the message text from @deprecated.
 // When @see tags are present alongside @deprecated, the diagnostic message

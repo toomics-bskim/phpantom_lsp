@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Diagnostics
 
+- **Syntax follows the project's PHP version.** The editor and `analyze` report syntax that needs a newer PHP release, including its required version, while keeping navigation available in the file.
 - **Objects used as strings.** Echoing, concatenating, interpolating, or casting to `string` an object whose class has no `__toString()` is reported, since PHP throws an `Error` there. It is an error when the class is final or an enum, and a warning when a subclass could still add the method.
 - **Private members nothing uses.** A private method, constant, or property its class never uses is dimmed, with a quick fix that removes it. A private property the class writes but never reads is dimmed too, and one it reads but never writes, and that has no default, is reported since it always holds `null`. Members a framework reads or writes by reflection, such as Doctrine's mapped fields, are left alone.
 - **Unused parameters.** With `unused-parameters = true` under `[diagnostics]`, a parameter a function, closure, or method never reads is dimmed, as long as it comes after the last one the body does read. Methods whose signature an interface, a parent class, or a possible override dictates are left alone, and so is any parameter whose name starts with `$_`.

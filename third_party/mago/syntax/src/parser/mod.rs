@@ -26,6 +26,8 @@ const MAX_RECURSION_DEPTH: u16 = 512;
 #[derive(Debug, Default)]
 pub struct State {
     pub within_string_interpolation: bool,
+    /// A legacy call named `fn` may precede the key/value `=>` separator.
+    pub allow_key_arrow: bool,
     pub recursion_depth: u16,
 }
 

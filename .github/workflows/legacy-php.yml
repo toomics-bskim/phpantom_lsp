@@ -66,6 +66,8 @@ jobs:
           PHP_PATCH: ${{ matrix.version }}
         run: |
           node scripts/check-php-compatibility.mjs "$env:PHPANTOM_COMPAT_OUTPUT/$env:PHP_TARGET.json" "$env:RUNNER_TEMP/php-reference/php.exe" $env:PHP_PATCH
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/check-php-compatibility.mjs "$env:PHPANTOM_COMPAT_OUTPUT/syntax-$env:PHP_TARGET.json" "$env:RUNNER_TEMP/php-reference/php.exe" $env:PHP_PATCH
       - uses: actions/upload-artifact@v4
         if: always()
         with:

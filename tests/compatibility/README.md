@@ -51,6 +51,23 @@ Pass each to `scripts/check-php-compatibility.mjs` with its matching reference
 runtime to check the source and formatted result. These checks execute the
 legacy forms that cannot run directly in the modern `examples/php` playground.
 
+## Source syntax capabilities
+
+[`syntax.json`](syntax.json) pairs source constructs with their introduction
+versions. The suite checks their boundaries from PHP 5.5 through 8.5, the
+original audit's lint outcomes, CLI/LSP agreement, editor navigation and
+UTF-16 positions. Legacy class-like type names and PHPDoc remain separate
+from syntax capability checks. A `#[` line on PHP 5 is a comment, not an
+unsupported attribute.
+
+Boundaries follow PHP's [5.6 migration guide](https://www.php.net/manual/en/migration56.new-features.php)
+and the subsequent release migration guides through
+[8.5](https://www.php.net/manual/en/migration85.new-features.php).
+`PHPANTOM_COMPAT_OUTPUT` exports `syntax-5.5.json`, `syntax-5.6.json`, and
+the later target matrices for the same reference-runtime runner. These are
+lint expectations; language acceptance does not establish runtime type
+inference or availability of an extension.
+
 ## Built-in availability
 
 `cargo test --test integration builtin_availability` checks introduction and

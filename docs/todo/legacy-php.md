@@ -96,7 +96,7 @@ hint; it is not evidence of support for the later primitive type.
 
 ## Delivery order
 
-Each numbered item is one implementation task and one PR. LP7–LP9 establish
+Each numbered item is one implementation task and one PR. LP8–LP9 establish
 shared version-aware parsing and call
 resolution; LP10–LP17 address the remaining semantic and inference gaps.
 LP19 covers the remaining edit producers; LP18 qualifies the final support
@@ -106,24 +106,6 @@ items can move into scheduled sprints without changing their scope.
 Reproduced defects should receive GitHub issues with the audit sample
 and target version attached, especially LP9. This
 document records the work; it does not imply issues have been opened.
-
-## LP7. Report syntax unavailable at the selected version
-
-**Impact: High · Complexity: Medium-High**
-
-**Evidence.** The invalid-source counts above include PHP 5.6 features on
-5.5 and later syntax on both targets. No target-version diagnostic is
-produced, even for property hooks and enums.
-
-**Plan.** Use source AST capabilities to report the required version at
-the offending syntax while retaining recovery for editor features. Cover
-the 5.6 boundary and later return types, operators, declarations,
-destructuring, imports, trailing commas, heredoc forms, and generator
-return rules. Native type-name interpretation belongs to LP8.
-
-**Done when.** Positive/negative pairs pass across each introduction
-boundary, CLI agrees with LSP, and modern stub/PHPDoc syntax is not
-mistaken for syntax executed by a PHP 5 project.
 
 ## LP8. Native type hints retain PHP 5 class-name meaning
 
@@ -283,8 +265,8 @@ precedence and lazy evaluation.
 
 **Done when.** Unannotated local and cross-file generators infer usable
 foreach values with several yield sites. Generator returns and `yield
-from` obey LP7's version boundary; body inference does not scan unrelated
-functions on every request.
+from` obey the selected version's boundary; body inference does not scan
+unrelated functions on every request.
 
 ## LP17. Variadic and unpacked calls carry argument types
 
@@ -302,12 +284,12 @@ and return types. Include PHPDoc/generic signatures and unknown-length
 packs instead of hardcoding the sample's string values.
 
 **Done when.** PHP 5.6 calls produce sound result types and argument
-diagnostics; PHP 5.5 still reports the unavailable syntax through LP7.
+diagnostics; PHP 5.5 still reports the unavailable syntax.
 Ordinary calls and modern unpacking keep their behavior.
 
 ## LP19. Remaining generated edits respect the target language
 
-**Impact: High · Complexity: Medium-High · Depends on: LP7**
+**Impact: High · Complexity: Medium-High**
 
 **Plan.** Audit edit producers outside constructor/accessor/property-hook
 generation: constructor-parameter promotion, type insertion, method
@@ -329,7 +311,7 @@ their meaning. Record a reproducer for every additional failure found.
 
 ## LP18. Qualify and document the support contract
 
-**Impact: High · Complexity: Medium · Depends on: LP7–LP17, LP19**
+**Impact: High · Complexity: Medium · Depends on: LP8–LP17, LP19**
 
 **Plan.** Expand the regression matrix to remaining language and LSP
 surfaces before claiming full support: include/require and manual
