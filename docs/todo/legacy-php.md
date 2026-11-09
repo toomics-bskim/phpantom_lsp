@@ -96,7 +96,7 @@ hint; it is not evidence of support for the later primitive type.
 
 ## Delivery order
 
-Each numbered item is one implementation task and one PR. LP12–LP17
+Each numbered item is one implementation task and one PR. LP13–LP17
 address the remaining semantic and inference gaps. LP20 covers constructor
 access and explicit calls.
 LP19 covers the remaining edit producers; LP18 qualifies the final support
@@ -106,22 +106,6 @@ items can move into scheduled sprints without changing their scope.
 Reproduced defects should receive GitHub issues with the audit sample
 and target version attached. This
 document records the work; it does not imply issues have been opened.
-
-## LP12. Destructuring updates append targets in runtime order
-
-**Impact: Medium-High · Complexity: High**
-
-**Evidence.** `list_append_order` assigns `list($values[], $values[]) =
-array(1, 2)`. Both runtimes produce `2` at index zero; PHPantom reports
-`null`. This establishes a target-write inference error as well as an
-evaluation-order requirement; it does not isolate the cause to order alone.
-
-**Plan.** Update the forward walker's array state for destructuring
-targets, with the version's assignment order and nested/keyed targets.
-
-**Done when.** Append and ordinary targets have sound value types in PHP
-5 and PHP 7 controls. Empty `list()`, skipped slots, strings, and
-`foreach` destructuring retain their target-specific behavior.
 
 ## LP13. Legacy constant lookup preserves name rules
 
@@ -284,9 +268,34 @@ fixtures cover selectors with side effects, call arguments that change a
 selector, dynamic global imports, and PHP 7/8 controls. Formatting preserves
 these effects, and unknown targets cannot retain stale narrowings.
 
+## LP22. Destructuring preserves target evaluation and aliases
+
+**Impact: Medium-High · Complexity: High**
+
+**Evidence.** With `$i = 0`, PHP 5.5.38 and 5.6.40 evaluate the indices in
+`list($values[$i++], $values[$i++]) = array(1, 2)` before writing the targets
+in reverse order: `$i` ends at `2`, and the array stores `1 => 2, 0 => 1`.
+The current binder resolves target offsets at write time and does not walk
+their increments. Native PHP 8.5 instead stores `0 => 1, 1 => 2`.
+
+**Plan.** Separate target preparation from writes in the shared expression
+walker, retaining captured keys and receiver identities according to the
+target version. Cover calls and assignments in indices, targets that alias
+one another, chained append targets (`$values[][]`), source arrays reached
+through properties or offsets, and
+reference destructuring on supported modern targets. This is the deferred
+evaluation and aliasing work from destructuring support; basic assignment
+order alone does not preserve these effects. The runtime reproducer should
+also be attached to a separate GitHub issue.
+
+**Done when.** Hover, completion, and diagnostics see the scope effects at
+their execution points, including within the pattern and RHS. Runtime and
+formatting controls cover both legacy versions and PHP 7/8 without retaining
+stale types for unknown mutations.
+
 ## LP18. Qualify and document the support contract
 
-**Impact: High · Complexity: Medium · Depends on: LP12–LP17, LP19–LP21**
+**Impact: High · Complexity: Medium · Depends on: LP13–LP17, LP19–LP22**
 
 **Plan.** Expand the regression matrix to remaining language and LSP
 surfaces before claiming full support: include/require and manual

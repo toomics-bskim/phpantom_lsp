@@ -206,6 +206,18 @@ earlier build. Index counts alone do not establish complete PHP compatibility.
 
 ## Known gaps and extending coverage
 
+`destructuring.json` checks the shared `list()`/`foreach` binder against
+PHP 5.5/5.6 and modern targets, including array writes, nested patterns,
+live source-variable reads, and legacy string unpacking. Exports retain
+LF/CRLF and formatted variants; `destructuring-empty-*.json` also checks
+version-specific syntax failures. The rules follow the
+[PHP 7 migration guide](https://www.php.net/manual/en/migration70.incompatible.php)
+and PHP 5.6's
+[list compilation](https://github.com/php/php-src/blob/PHP-5.6/Zend/zend_compile.c),
+with native runtime checks deciding the expected values. No external
+implementation code is copied. Target expressions with scope effects and
+aliasing remain in LP22 of the compatibility backlog.
+
 The ignored Rust test asserts the desired unsupported-version diagnostics.
 Run it explicitly with `cargo test --test legacy_compatibility -- --ignored`
 when implementing them, then remove its ignore attribute. It is not passing

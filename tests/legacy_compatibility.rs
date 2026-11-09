@@ -2085,3 +2085,221 @@ function writeOnly() {
         assert_eq!(lines, expected, "{version}: {diagnostics:?}");
     }
 }
+
+#[tokio::test]
+async fn destructuring_writes_follow_target_runtime() {
+    let cases: Value =
+        serde_json::from_str(include_str!("compatibility/destructuring.json")).unwrap();
+    let mut failures = Vec::new();
+    for version in [
+        PhpVersion::new(5, 5),
+        PhpVersion::new(5, 6),
+        PhpVersion::new(7, 4),
+        PhpVersion::new(8, 5),
+    ] {
+        let (dir, backend) = project(version).await;
+        let mut exported = Vec::new();
+        for case in cases.as_array().unwrap() {
+            if u64::from(version.major) < case["min"].as_u64().unwrap_or(5) {
+                continue;
+            }
+            let expected = case[if version.major == 5 {
+                "legacy"
+            } else {
+                "modern"
+            }]
+            .as_str()
+            .unwrap();
+            let value = &case[if version.major == 5 {
+                "legacy_value"
+            } else {
+                "modern_value"
+            }];
+            for (ending, newline) in [("lf", "\n"), ("crlf", "\r\n")] {
+                let id = format!("{}-{ending}", case["id"].as_str().unwrap());
+                let text = format!("<?php\n{}\n$probe;\n", case["code"].as_str().unwrap())
+                    .replace('\n', newline);
+                let uri = open(&backend, dir.path(), &id, &text).await;
+                let position = common::position_of_last(&text, "$probe;");
+                let hover =
+                    common::markup_hover_at(&backend, &uri, position.line, position.character + 2)
+                        .await;
+                if !hover.contains(&format!("$probe = {expected}\n")) {
+                    failures.push(format!("{version} {id}: expected {expected}, got {hover}"));
+                }
+                exported.push(runtime_case(&id, &text, value));
+                if version.major == 5 {
+                    let formatted = format(&backend, &uri, &text, false).await;
+                    exported.push(runtime_case(&format!("{id}-formatted"), &formatted, value));
+                }
+            }
+        }
+        if let Some(output) = std::env::var_os("PHPANTOM_COMPAT_OUTPUT") {
+            std::fs::create_dir_all(&output).unwrap();
+            std::fs::write(
+                Path::new(&output).join(format!("destructuring-{version}.json")),
+                serde_json::to_vec_pretty(&json!({"target":version.to_string(), "cases":exported}))
+                    .unwrap(),
+            )
+            .unwrap();
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[tokio::test]
+async fn destructuring_empty_patterns_follow_target_version() {
+    for version in [
+        PhpVersion::new(5, 5),
+        PhpVersion::new(5, 6),
+        PhpVersion::new(7, 4),
+        PhpVersion::new(8, 5),
+    ] {
+        let (dir, backend) = project(version).await;
+        let mut exported = Vec::new();
+        for (id, code, legacy_count, modern_count) in [
+            ("empty", "list() = array();", 0, 1),
+            ("upper", "LIST() = array();", 0, 1),
+            ("holes", "list(,,) = array();", 0, 1),
+            ("nested", "list($value, list()) = array(1, array());", 0, 1),
+            ("valid", "list(, $value) = array(1, 2);", 0, 0),
+            ("foreach", "foreach (array(array()) as list()) {}", 1, 1),
+            (
+                "foreach_nested",
+                "foreach (array(array(array())) as list(list())) {}",
+                1,
+                1,
+            ),
+            (
+                "foreach_partial",
+                "foreach (array(array(1, array())) as list($value, list())) {}",
+                0,
+                1,
+            ),
+        ] {
+            let text = format!("<?php\n{code}\n");
+            let uri = open(&backend, dir.path(), id, &text).await;
+            let diagnostics = ready_diagnostics(&backend, &uri).await;
+            let count = if version.major == 5 {
+                legacy_count
+            } else {
+                modern_count
+            };
+            assert_eq!(
+                diagnostics
+                    .iter()
+                    .filter(|d| d.code == Some(Code::String("unsupported_syntax".into())))
+                    .count(),
+                count,
+                "{version} {id}: {diagnostics:?}"
+            );
+            exported.push(json!({"id":id, "source":text, "lint": count == 0}));
+        }
+        if let Some(output) = std::env::var_os("PHPANTOM_COMPAT_OUTPUT") {
+            std::fs::create_dir_all(&output).unwrap();
+            std::fs::write(
+                Path::new(&output).join(format!("destructuring-empty-{version}.json")),
+                serde_json::to_vec_pretty(&json!({"target":version.to_string(), "cases":exported}))
+                    .unwrap(),
+            )
+            .unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+async fn destructuring_targets_feed_shared_member_resolution() {
+    for version in [
+        PhpVersion::new(5, 5),
+        PhpVersion::new(5, 6),
+        PhpVersion::new(7, 4),
+        PhpVersion::new(8, 5),
+    ] {
+        let (dir, backend) = project(version).await;
+        let text = r#"<?php
+class First { function firstMethod($arg) {} }
+class Second { function secondMethod($arg) {} }
+function rows() {
+    $values = array();
+    list($values[], $values[]) = array(new First(), new Second());
+    $selected = $values[0];
+    $selected->firstMethod(1);
+    $selected->secondMethod(2);
+    $selected->missing();
+}
+
+"#;
+        let uri = open(&backend, dir.path(), "destructured-members", text).await;
+        let expected = if version.major == 5 {
+            "secondMethod"
+        } else {
+            "firstMethod"
+        };
+        let position = common::position_after(text, "$selected->");
+        let labels = common::item_labels(
+            common::complete_at_opened(&backend, &uri, position.line, position.character).await,
+        );
+        assert!(
+            labels.iter().any(|label| label.starts_with(expected)),
+            "{version}: {labels:?}"
+        );
+        let diagnostics = ready_diagnostics(&backend, &uri).await;
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| common::message_text(&d.message).contains("missing")),
+            "{version}: {diagnostics:?}"
+        );
+        assert!(
+            !diagnostics
+                .iter()
+                .any(|d| common::message_text(&d.message).contains(expected)),
+            "{version}: {diagnostics:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn destructuring_unknown_elements_invalidate_written_offsets() {
+    for version in [
+        PhpVersion::new(5, 5),
+        PhpVersion::new(5, 6),
+        PhpVersion::new(7, 4),
+        PhpVersion::new(8, 5),
+    ] {
+        let (dir, backend) = project(version).await;
+        for (id, code, expected) in [
+            (
+                "unknown",
+                "function inspect($input) { $values = array('old'); list($values[0], $values[]) = $input; $probe = $values[0]; $probe; }",
+                "mixed",
+            ),
+            (
+                "optional",
+                "/** @param array{0?: int} $input */ function inspect($input) { list($probe) = $input; $probe; }",
+                "?int",
+            ),
+            (
+                "nullable",
+                "/** @param array{int}|null $input */ function inspect($input) { list($probe) = $input; $probe; }",
+                "int|null",
+            ),
+            (
+                "empty_loop",
+                "function inspect() { $values = array('old'); foreach (array() as list($values[])) {} $probe = $values[0]; $probe; }",
+                "'old'",
+            ),
+        ] {
+            let text = format!("<?php\n{code}\n");
+            let uri = open(&backend, dir.path(), id, &text).await;
+            let position = common::position_of_last(&text, "$probe;");
+            let hover =
+                common::markup_hover_at(&backend, &uri, position.line, position.character + 2)
+                    .await;
+            assert!(
+                hover.contains(&format!("$probe = {expected}\n")),
+                "{version} {id}: {hover}"
+            );
+        }
+    }
+}

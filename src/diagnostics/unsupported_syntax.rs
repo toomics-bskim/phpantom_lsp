@@ -24,8 +24,14 @@ impl Backend {
         out: &mut Vec<Diagnostic>,
     ) {
         let version = self.source_php_version(uri);
-        // All capabilities checked here are available at the default target.
-        if version >= PHPVersion::PHP85 {
+        // New capabilities are all available at the default target. Empty
+        // list() is a removed construct that still needs checking there.
+        if version >= PHPVersion::PHP85
+            && !content
+                .as_bytes()
+                .windows(4)
+                .any(|word| word.eq_ignore_ascii_case(b"list"))
+        {
             return;
         }
         let _version = SourceVersionGuard::new(version);
@@ -132,6 +138,28 @@ macro_rules! function_scope {
 }
 
 impl<'ast, 'arena> Walker<'ast, 'arena, Context<'_>> for Capabilities {
+    fn walk_in_list(&self, node: &'ast List<'arena>, context: &mut Context<'_>) {
+        if context.version >= PHPVersion::PHP70
+            && node
+                .elements
+                .iter()
+                .all(|element| matches!(element, ArrayElement::Missing(_)))
+            && let Some(range) = context.backend.offset_range_to_lsp_range(
+                context.uri,
+                context.source,
+                node.span().start.offset as usize,
+                node.span().end.offset as usize,
+            )
+        {
+            context.out.push(make_diagnostic(
+                range,
+                DiagnosticSeverity::Error,
+                "unsupported_syntax",
+                "Empty list() is not allowed in PHP 7.0 and later.".into(),
+            ));
+        }
+    }
+
     capability!(
         walk_in_function_like_return_type_hint,
         FunctionLikeReturnTypeHint,
@@ -514,6 +542,23 @@ impl<'ast, 'arena> Walker<'ast, 'arena, Context<'_>> for Capabilities {
             ForeachTarget::Value(target) => target.value,
             ForeachTarget::KeyValue(target) => target.value,
         };
+        if context.version < PHPVersion::PHP70
+            && matches!(value, Expression::List(_))
+            && !destructuring_has_target(value)
+            && let Some(range) = context.backend.offset_range_to_lsp_range(
+                context.uri,
+                context.source,
+                value.span().start.offset as usize,
+                value.span().end.offset as usize,
+            )
+        {
+            context.out.push(make_diagnostic(
+                range,
+                DiagnosticSeverity::Error,
+                "unsupported_syntax",
+                "Empty foreach destructuring is not allowed.".into(),
+            ));
+        }
         destructuring(value, context);
     }
 
@@ -593,6 +638,19 @@ fn numeric_literal(span: Span, context: &mut Context<'_>) {
     if raw.starts_with("0o") || raw.starts_with("0O") {
         context.require(span, 8, 1, "Explicit octal notation");
     }
+}
+
+fn destructuring_has_target(expression: &Expression<'_>) -> bool {
+    let elements = match expression {
+        Expression::Array(array) => &array.elements,
+        Expression::List(list) => &list.elements,
+        _ => return true,
+    };
+    elements.iter().any(|element| match element {
+        ArrayElement::Value(value) => destructuring_has_target(value.value),
+        ArrayElement::KeyValue(value) => destructuring_has_target(value.value),
+        _ => false,
+    })
 }
 
 fn destructuring(expression: &Expression<'_>, context: &mut Context<'_>) {

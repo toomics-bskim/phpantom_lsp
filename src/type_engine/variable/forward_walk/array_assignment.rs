@@ -12,7 +12,7 @@ use crate::types::ResolvedType;
 
 /// Process array destructuring assignments.
 ///
-/// Resolves the RHS type once, then walks the LHS pattern to assign
+/// Resolves the RHS type, then walks the LHS pattern to assign
 /// types to each destructured variable.  Handles nested patterns like
 /// `[$a, [$b, $c]] = $nested` by recursing into inner array/list
 /// expressions.
@@ -21,23 +21,77 @@ pub(crate) fn process_destructuring_assignment<'b>(
     scope: &mut ScopeState,
     ctx: &ForwardWalkCtx<'_>,
 ) {
+    let rhs_span = assignment.rhs.span();
+    if ctx.cursor_offset >= rhs_span.start.offset && ctx.cursor_offset <= rhs_span.end.offset {
+        return;
+    }
     let scope_resolver = scope.snapshot_resolver();
 
     // Build a temporary VarResolutionCtx just to resolve the RHS type.
     // The var_name doesn't matter here since we're resolving the RHS
     // expression, not looking up a specific variable.
-    let dummy_name = String::from("$__destructuring_rhs");
     let var_ctx = ctx.var_ctx_for_with_scope(
-        &dummy_name,
+        "$__destructuring_rhs",
         assignment.span().start.offset,
         &scope_resolver,
         Some(scope.proofs()),
     );
 
-    match destructuring_rhs_type(assignment, &var_ctx) {
-        Some(ref rhs_type) => bind_destructured_pattern(assignment.lhs, rhs_type, scope, ctx),
-        None => forget_destructured_vars(assignment.lhs, scope),
+    let rhs_type = destructuring_rhs_type(assignment, &var_ctx).unwrap_or_else(PhpType::mixed);
+    // PHP 5 fetches string offsets from variables and call results, but
+    // not from literal/temporary values such as a concatenation.
+    let string_offsets = legacy_string_offsets(assignment.rhs);
+    let live_name = match crate::parser::unwrap_parens(assignment.rhs) {
+        Expression::Variable(Variable::Direct(dv)) if is_legacy_destructuring() => {
+            let name = bytes_to_str(dv.name);
+            pattern_writes_variable(assignment.lhs, name).then_some(name)
+        }
+        _ => None,
+    };
+    let mut source = PatternSource {
+        initial: &rhs_type,
+        live_name,
+        keys: Vec::new(),
+        string_offsets,
+        constant: is_constant_value(assignment.rhs),
+    };
+    bind_pattern(assignment.lhs, &mut source, scope, ctx);
+}
+
+/// PHP 5's variable fetch accepts strings; its temporary-value fetch does
+/// not. A ternary uses a variable result if either arm needs one.
+fn legacy_string_offsets(expr: &Expression<'_>) -> bool {
+    match crate::parser::unwrap_parens(expr) {
+        Expression::Variable(_)
+        | Expression::Call(_)
+        | Expression::Access(_)
+        | Expression::ArrayAccess(_)
+        | Expression::Assignment(_) => true,
+        Expression::Conditional(conditional) => {
+            legacy_string_offsets(conditional.then.unwrap_or(conditional.condition))
+                || legacy_string_offsets(conditional.r#else)
+        }
+        Expression::UnaryPrefix(prefix) if prefix.operator.is_error_control() => {
+            legacy_string_offsets(prefix.operand)
+        }
+        _ => false,
     }
+}
+
+fn pattern_writes_variable(target: &Expression<'_>, name: &str) -> bool {
+    let elements = match target {
+        Expression::Variable(Variable::Direct(dv)) => return bytes_to_str(dv.name) == name,
+        Expression::ArrayAccess(access) => return pattern_writes_variable(access.array, name),
+        Expression::ArrayAppend(append) => return pattern_writes_variable(append.array, name),
+        Expression::Array(array) => &array.elements,
+        Expression::List(list) => &list.elements,
+        _ => return false,
+    };
+    elements.iter().any(|element| match element {
+        ArrayElement::Value(value) => pattern_writes_variable(value.value, name),
+        ArrayElement::KeyValue(value) => pattern_writes_variable(value.value, name),
+        _ => false,
+    })
 }
 
 /// The type a destructuring assignment takes apart: what an inline `@var`
@@ -70,37 +124,6 @@ pub(crate) fn destructuring_rhs_type(
     )
 }
 
-/// Record every direct variable in a destructuring LHS pattern as holding
-/// an unknown value.  A destructuring writes each of its targets whatever
-/// the RHS turns out to be, so one whose element could not be typed loses
-/// the value it held before, the way a plain assignment from an
-/// unresolvable RHS does.  The entry stays in scope, which lets later
-/// assert narrowing seed a type for it.
-fn forget_destructured_vars<'b>(lhs: &'b Expression<'b>, scope: &mut ScopeState) {
-    let elements: Vec<&ArrayElement<'b>> = match lhs {
-        Expression::Array(arr) => arr.elements.iter().collect(),
-        Expression::List(list) => list.elements.iter().collect(),
-        _ => return,
-    };
-
-    for elem in elements {
-        let value_expr = match elem {
-            ArrayElement::KeyValue(kv) => kv.value,
-            ArrayElement::Value(val) => val.value,
-            _ => continue,
-        };
-        match value_expr {
-            Expression::Variable(Variable::Direct(dv)) => {
-                scope.set_unknown(bytes_to_str(dv.name));
-            }
-            Expression::Array(_) | Expression::List(_) => {
-                forget_destructured_vars(value_expr, scope);
-            }
-            _ => {}
-        }
-    }
-}
-
 /// Recursively bind types from a destructuring LHS pattern against a
 /// resolved RHS type.  For each variable in the pattern, extracts the
 /// corresponding type from the RHS type (via shape key or positional
@@ -112,50 +135,131 @@ pub(crate) fn bind_destructured_pattern<'b>(
     scope: &mut ScopeState,
     ctx: &ForwardWalkCtx<'_>,
 ) {
-    let elements: Vec<&ArrayElement<'b>> = match lhs {
-        Expression::Array(arr) => arr.elements.iter().collect(),
-        Expression::List(list) => list.elements.iter().collect(),
+    let mut source = PatternSource {
+        initial: rhs_type,
+        live_name: None,
+        keys: Vec::new(),
+        string_offsets: true,
+        constant: false,
+    };
+    bind_pattern(lhs, &mut source, scope, ctx);
+}
+
+fn is_legacy_destructuring() -> bool {
+    crate::parser::source_version() < mago_php_version::PHPVersion::PHP70
+}
+
+struct PatternSource<'a> {
+    initial: &'a PhpType,
+    // PHP 5 reads a source variable again for each leaf, so a target that
+    // writes into it changes what later leaves read. PHP 7 takes a copy.
+    live_name: Option<&'a str>,
+    keys: Vec<Option<String>>,
+    string_offsets: bool,
+    constant: bool,
+}
+
+impl PatternSource<'_> {
+    fn read(&self, scope: &ScopeState) -> PhpType {
+        let mut value = self.live_name.map_or_else(
+            || self.initial.clone(),
+            |name| {
+                let types = scope.get(name);
+                if types.is_empty() {
+                    PhpType::mixed()
+                } else {
+                    ResolvedType::types_joined(types)
+                }
+            },
+        );
+        for (depth, key) in self.keys.iter().enumerate() {
+            value = element_type(
+                &value,
+                key.as_deref(),
+                is_legacy_destructuring() && (depth > 0 || self.string_offsets),
+            )
+            .unwrap_or_else(PhpType::mixed);
+        }
+        value
+    }
+}
+
+fn bind_pattern<'b>(
+    lhs: &'b Expression<'b>,
+    source: &mut PatternSource<'_>,
+    scope: &mut ScopeState,
+    ctx: &ForwardWalkCtx<'_>,
+) {
+    let elements = match lhs {
+        Expression::Array(arr) => arr.elements.iter(),
+        Expression::List(list) => list.elements.iter(),
         _ => return,
     };
-
-    let mut positional_index: usize = 0;
-    for elem in elements {
+    let legacy = is_legacy_destructuring();
+    let mut elements = elements.enumerate();
+    while let Some((position, elem)) = if legacy {
+        elements.next_back()
+    } else {
+        elements.next()
+    } {
         let (value_expr, shape_key) = match elem {
             ArrayElement::KeyValue(kv) => {
                 let key = extract_foreach_destr_key(kv.key);
                 (kv.value, key)
             }
             ArrayElement::Value(val) => {
-                let key = Some(positional_index.to_string());
-                positional_index += 1;
+                let key = Some(position.to_string());
                 (val.value, key)
             }
             // A hole (`[, $second]`) names nothing but still consumes the
             // position, so every later element shifts along with it.
-            ArrayElement::Missing(_) => {
-                positional_index += 1;
-                continue;
-            }
+            ArrayElement::Missing(_) => continue,
             _ => continue,
         };
 
-        let elem_type = destructured_element_type(rhs_type, shape_key.as_deref());
-
-        match (value_expr, elem_type) {
-            (Expression::Variable(Variable::Direct(dv)), Some(vt)) => {
-                scope.set(bytes_to_str(dv.name), ctx.resolved_types_for(vt));
-            }
-            (Expression::Array(_) | Expression::List(_), Some(vt)) => {
-                bind_destructured_pattern(value_expr, &vt, scope, ctx);
-            }
-            (Expression::Variable(Variable::Direct(dv)), None) => {
-                scope.set_unknown(bytes_to_str(dv.name));
-            }
-            (Expression::Array(_) | Expression::List(_), None) => {
-                forget_destructured_vars(value_expr, scope);
-            }
-            _ => {}
+        source.keys.push(shape_key);
+        if matches!(value_expr, Expression::Array(_) | Expression::List(_)) {
+            bind_pattern(value_expr, source, scope, ctx);
+        } else {
+            bind_destructured_target(value_expr, source.read(scope), source.constant, scope, ctx);
         }
+        source.keys.pop();
+    }
+}
+
+fn bind_destructured_target<'b>(
+    target: &'b Expression<'b>,
+    value: PhpType,
+    constant: bool,
+    scope: &mut ScopeState,
+    ctx: &ForwardWalkCtx<'_>,
+) {
+    match target {
+        Expression::Variable(Variable::Direct(dv)) => {
+            if value.is_mixed() {
+                scope.set_unknown(bytes_to_str(dv.name));
+            } else {
+                scope.set(bytes_to_str(dv.name), ctx.resolved_types_for(value));
+            }
+        }
+        Expression::ArrayAppend(append) => {
+            process_array_append_write(append, ctx.resolved_types_for(value), constant, scope, ctx);
+        }
+        Expression::ArrayAccess(access) => {
+            process_array_key_write(access, ctx.resolved_types_for(value), constant, scope, ctx);
+        }
+        Expression::Access(Access::Property(_) | Access::StaticProperty(_)) => {
+            if let Some(key) = condition_facts::expr_to_subject_key(target) {
+                scope.invalidate_proofs(&key);
+                if value.is_mixed() || property_write_dispatches_to_magic_set(target, scope, ctx) {
+                    scope.remove(&key);
+                    scope.invalidate_dependent_keys(&key);
+                } else {
+                    scope.set(&key, ctx.resolved_types_for(value));
+                }
+            }
+        }
+        _ => {}
     }
 }
 
@@ -166,13 +270,44 @@ pub(crate) fn bind_destructured_pattern<'b>(
 /// assigns `null` to every target, so a nullable RHS hands each target its
 /// element type or `null`.
 pub(crate) fn destructured_element_type(rhs_type: &PhpType, key: Option<&str>) -> Option<PhpType> {
+    element_type(rhs_type, key, false)
+}
+
+fn element_type(rhs_type: &PhpType, key: Option<&str>, string_offsets: bool) -> Option<PhpType> {
     match rhs_type.kind() {
-        TypeKind::Nullable(inner) => destructured_element_type(inner, key).map(PhpType::or_null),
+        TypeKind::Nullable(inner) => element_type(inner, key, string_offsets).map(PhpType::or_null),
         TypeKind::Union(members) => members
             .iter()
-            .map(|member| destructured_element_type(member, key))
+            .map(|member| element_type(member, key, string_offsets))
             .collect::<Option<Vec<_>>>()
             .map(PhpType::union),
+        _ if string_offsets && rhs_type.is_string_subtype() => {
+            if let Some(index) = key.and_then(|key| key.parse::<usize>().ok())
+                && let Some(text) = rhs_type
+                    .as_literal()
+                    .and_then(crate::php_type::LiteralValue::string_content)
+            {
+                return match text.as_bytes().get(index) {
+                    Some(byte) if byte.is_ascii() => {
+                        Some(PhpType::literal_string_value(char::from(*byte).to_string()))
+                    }
+                    None => Some(PhpType::literal_string_value("")),
+                    _ => Some(PhpType::string()),
+                };
+            }
+            Some(PhpType::string())
+        }
+        TypeKind::ArrayShape(_) if key.is_some() => Some(
+            rhs_type
+                .shape_entry(key.unwrap())
+                .map_or_else(PhpType::null, |entry| {
+                    if entry.optional {
+                        entry.value_type.clone().or_null()
+                    } else {
+                        entry.value_type.clone()
+                    }
+                }),
+        ),
         _ if rhs_type.is_null()
             || rhs_type.is_bool()
             || rhs_type.is_true()
@@ -242,12 +377,29 @@ pub(crate) fn process_array_append<'b>(
     scope: &mut ScopeState,
     ctx: &ForwardWalkCtx<'_>,
 ) {
+    let rhs_types = resolve_rhs_with_scope(assignment.rhs, scope, ctx);
+    let constant = is_constant_value(assignment.rhs);
+    process_array_append_write(array_append, rhs_types, constant, scope, ctx);
+}
+
+fn process_array_append_write<'b>(
+    array_append: &'b ArrayAppend<'b>,
+    rhs_types: Vec<ResolvedType>,
+    constant: bool,
+    scope: &mut ScopeState,
+    ctx: &ForwardWalkCtx<'_>,
+) {
     match array_append.array {
         Expression::Variable(Variable::Direct(dv)) => {
-            let base_name = bytes_to_str(dv.name).to_string();
-            let rhs_types = resolve_rhs_with_scope(assignment.rhs, scope, ctx);
-            let constant = is_constant_value(assignment.rhs);
-            apply_array_write(&base_name, &[], true, rhs_types, constant, scope, ctx);
+            apply_array_write(
+                bytes_to_str(dv.name),
+                &[],
+                true,
+                rhs_types,
+                constant,
+                scope,
+                ctx,
+            );
         }
         // `$var['a'][$i][] = …` — the append lands on the innermost level
         // of an array-access chain rather than on the variable itself.
@@ -255,11 +407,14 @@ pub(crate) fn process_array_append<'b>(
             if let Some((base_name, key_chain)) =
                 super::super::array_shape_writes::extract_nested_array_access_chain(inner)
             {
-                let rhs_types = resolve_rhs_with_scope(assignment.rhs, scope, ctx);
-                let constant = is_constant_value(assignment.rhs);
                 apply_array_write(
                     &base_name, &key_chain, true, rhs_types, constant, scope, ctx,
                 );
+            }
+        }
+        Expression::Access(Access::Property(_) | Access::StaticProperty(_)) => {
+            if let Some(key) = condition_facts::expr_to_subject_key(array_append.array) {
+                apply_array_write(&key, &[], true, rhs_types, constant, scope, ctx);
             }
         }
         _ => {}

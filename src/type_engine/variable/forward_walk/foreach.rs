@@ -283,6 +283,7 @@ struct ForeachBinding<'b> {
     key_var_name: Option<String>,
     value_docblock_override: Option<Vec<ResolvedType>>,
     key_docblock_override: Option<Vec<ResolvedType>>,
+    destructured_docblock_overrides: Vec<(String, Vec<ResolvedType>)>,
 }
 
 impl<'b> ForeachBinding<'b> {
@@ -305,14 +306,29 @@ impl<'b> ForeachBinding<'b> {
         // over types inferred from the iterable.
         let mut value_docblock_override: Option<Vec<ResolvedType>> = None;
         let mut key_docblock_override: Option<Vec<ResolvedType>> = None;
+        let mut destructured_docblock_overrides = Vec::new();
         let foreach_offset = foreach.foreach.span().start.offset as usize;
         if let Some(doc_text) = docblock_above(ctx.file.content, foreach_offset) {
+            let mut destructured_vars = HashSet::new();
+            if value_var_name.is_none() {
+                let value = match &foreach.target {
+                    ForeachTarget::Value(value) => value.value,
+                    ForeachTarget::KeyValue(value) => value.value,
+                };
+                collect_foreach_bound_vars(value, &mut destructured_vars);
+            }
             for (doc_var, php_type) in &parse_var_docblock_pairs(doc_text) {
                 if value_var_name.as_ref() == Some(doc_var) {
                     value_docblock_override = Some(resolve_type_to_resolved_types(php_type, ctx));
                 }
                 if key_var_name.as_ref() == Some(doc_var) {
                     key_docblock_override = Some(resolve_type_to_resolved_types(php_type, ctx));
+                }
+                if destructured_vars.contains(doc_var) {
+                    destructured_docblock_overrides.push((
+                        doc_var.clone(),
+                        resolve_type_to_resolved_types(php_type, ctx),
+                    ));
                 }
             }
         }
@@ -324,6 +340,7 @@ impl<'b> ForeachBinding<'b> {
             key_var_name,
             value_docblock_override,
             key_docblock_override,
+            destructured_docblock_overrides,
         }
     }
 
@@ -349,6 +366,9 @@ impl<'b> ForeachBinding<'b> {
             && let Some(ref kn) = self.key_var_name
         {
             scope.set(kn, resolved.clone());
+        }
+        for (name, resolved) in &self.destructured_docblock_overrides {
+            scope.set(name, resolved.clone());
         }
         if self.value_docblock_override.is_none() {
             record_key_value_pairing(self.foreach, self.iter_type.as_ref(), scope, ctx);
@@ -1333,55 +1353,12 @@ pub(crate) fn bind_foreach_value<'b>(
             )
         });
 
-        if let Some(ref elem_type) = element_type {
-            let elements_iter: Vec<&ArrayElement<'_>> = match value_expr {
-                Expression::Array(arr) => arr.elements.iter().collect(),
-                Expression::List(list) => list.elements.iter().collect(),
-                _ => vec![],
-            };
-
-            let mut positional_index: usize = 0;
-            for elem in elements_iter {
-                let (var_name, shape_key) = match elem {
-                    ArrayElement::KeyValue(kv) => {
-                        if let Expression::Variable(Variable::Direct(dv)) = kv.value {
-                            (
-                                bytes_to_str(dv.name).to_string(),
-                                extract_foreach_destr_key(kv.key),
-                            )
-                        } else {
-                            continue;
-                        }
-                    }
-                    ArrayElement::Value(val) => {
-                        let key = Some(positional_index.to_string());
-                        positional_index += 1;
-                        if let Expression::Variable(Variable::Direct(dv)) = val.value {
-                            (bytes_to_str(dv.name).to_string(), key)
-                        } else {
-                            continue;
-                        }
-                    }
-                    // A hole (`foreach ($x as [, $parameter])`) names nothing
-                    // but still consumes the position.
-                    ArrayElement::Missing(_) => {
-                        positional_index += 1;
-                        continue;
-                    }
-                    _ => continue,
-                };
-
-                // Try shape key lookup first, then fall back to generic element type.
-                let resolved_type = shape_key
-                    .as_ref()
-                    .and_then(|k| elem_type.shape_value_type(k).cloned())
-                    .or_else(|| elem_type.extract_value_type(true).cloned());
-
-                if let Some(vt) = resolved_type {
-                    scope.set(&var_name, ctx.resolved_types_for(vt));
-                }
-            }
-        }
+        bind_destructured_pattern(
+            value_expr,
+            &element_type.unwrap_or_else(PhpType::mixed),
+            scope,
+            &ctx.with_in_loop(true),
+        );
     }
 }
 

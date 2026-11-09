@@ -609,7 +609,7 @@ fn rhs_fails_on_resolved_receiver(rhs: &Expression<'_>, scope: &ScopeState) -> b
 /// Returns `false` whenever no subject class resolves: without a class
 /// there is no evidence of a magic setter, and the write is recorded as
 /// before.
-fn property_write_dispatches_to_magic_set(
+pub(super) fn property_write_dispatches_to_magic_set(
     lhs: &Expression<'_>,
     scope: &ScopeState,
     ctx: &ForwardWalkCtx<'_>,

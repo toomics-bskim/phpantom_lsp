@@ -6016,3 +6016,25 @@ class IndirectNameDemo
         return ${$names['selected']};
     }
 }
+
+// ─── Destructuring writes into arrays ─────────────────────────────────
+
+class DestructuringWriteDemo
+{
+    public function selectedPen(): Scaffolding\Pen
+    {
+        $pens = [];
+        list($pens[], $pens[]) = [new Scaffolding\Pen(), new Scaffolding\Pen()];
+        // Try: `$pens[0]->` — Scaffolding\Pen members.
+        return $pens[0];
+    }
+
+    public function firstValue(): int
+    {
+        $values = [];
+        list($values[], $values[]) = [1, 2];
+        // Try: hover $first — 1 on PHP 7+, 2 on PHP 5.
+        $first = $values[0];
+        return $first;
+    }
+}

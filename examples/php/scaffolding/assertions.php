@@ -2223,6 +2223,10 @@ function runDemoAssertions(): void
     assert($loose->select('foo') === 'foo');
     assert($loose->select(0) === (PHP_VERSION_ID < 80000 ? 0 : null));
     assert($loose->select(1) === null);
+    $destructuring = new DestructuringWriteDemo();
+    assert($destructuring->selectedPen() instanceof Scaffolding\Pen);
+    assert($destructuring->selectedPen()->color() === 'black');
+    assert($destructuring->firstValue() === (PHP_VERSION_ID < 70000 ? 2 : 1));
     echo "All assertions passed.\n";
 }
 

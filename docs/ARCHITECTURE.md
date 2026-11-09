@@ -1538,6 +1538,15 @@ method bodies top-to-bottom, building a scope of variable types at
 each statement boundary. It is shared by diagnostics, completion,
 hover, go-to-definition, and signature help.
 
+Destructuring assignments and `foreach` use the same pattern binder and
+array writes as ordinary assignments. PHP 7 captures the RHS before the
+targets change; PHP 5 writes the pattern in reverse order and rereads a
+source variable when the pattern itself changes it, including nested
+patterns. Loop header writes widen collection state like loop body writes.
+Legacy string unpacking also depends on the source expression: variables
+and call results permit byte offsets, while literal and temporary strings
+do not.
+
 Inside a statement, the walk follows PHP's evaluation order
 (`forward_walk/expr.rs`): each sub-expression runs on the scope the ones
 before it left, so a write or a check partway through an expression
