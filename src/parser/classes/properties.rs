@@ -257,7 +257,7 @@ pub(super) fn infer_assigned_property_types(
                 Expression::Instantiation(inst) => {
                     if let Expression::Identifier(class_ident) = inst.class {
                         let fqn = resolve_written_class(bytes_to_str(class_ident.value()), doc_ctx);
-                        Some(PhpType::named(atom(&fqn)))
+                        Some(PhpType::class_named(atom(&fqn)))
                     } else {
                         None
                     }

@@ -878,7 +878,7 @@ pub(crate) fn resolve_rhs_with_types<'b>(
             // `use App\Support;`) is neither the FQCN nor resolvable once the
             // class-string is read somewhere else.  Prefer the resolved class.
             let class_string_type = PhpType::class_string(Some(match classes.first() {
-                Some(cls) => PhpType::named(cls.fqn()),
+                Some(cls) => PhpType::class_named(cls.fqn()),
                 None => PhpType::named(atom(resolved_name)),
             }));
             if !classes.is_empty() {

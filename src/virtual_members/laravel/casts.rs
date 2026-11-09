@@ -191,7 +191,7 @@ fn resolve_cast_type(cast_type: &str, class_loader: &ResolvedClassLoader<'_>) ->
     if let Some(cast_class) = class_loader(Fqn::new(class_name)) {
         // 8a. Enums — the property type is the enum itself.
         if cast_class.kind == ClassLikeKind::Enum {
-            return (PhpType::named(atom(class_name)), true);
+            return (PhpType::class_named(atom(class_name)), true);
         }
 
         // 8b. Castable implementations — the property type is the
@@ -199,7 +199,7 @@ fn resolve_cast_type(cast_type: &str, class_loader: &ResolvedClassLoader<'_>) ->
         //     which returns a CastsAttributes instance, but the
         //     developer-facing type is the Castable class.
         if is_castable(&cast_class) {
-            return (PhpType::named(atom(class_name)), false);
+            return (PhpType::class_named(atom(class_name)), false);
         }
 
         // 8c. `@implements CastsAttributes<TGet, TSet>` — the canonical

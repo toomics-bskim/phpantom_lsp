@@ -35,6 +35,8 @@ function runDemoAssertions(): void
     assert(hash_equals('demo', 'demo') === true);
     assert(hash_equals('demo', 'different') === false);
     assert((new LegacyOffsetDemo())->demo() instanceof Scaffolding\Pen);
+    $legacyPen = new Scaffolding\Pen();
+    assert((new LegacyNativeHintDemo())->demo($legacyPen) === $legacyPen);
     assert((new PhpVersionDiagnosticsDemo())->countItems('one', 'two') === 2);
     $legacyGeneration = new LegacyGenerationDemo();
     assert(is_string($legacyGeneration->name));

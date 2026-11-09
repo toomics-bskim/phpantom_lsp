@@ -150,7 +150,9 @@ impl Backend {
             {
                 return self.find_or_load_class(fqn);
             }
-            if let Some(cls) = self.find_or_load_class_typed(&PhpType::parse(fqn)) {
+            if let Some(cls) =
+                self.find_or_load_class_typed(&PhpType::class_named(crate::atom::atom(fqn)))
+            {
                 return Some(cls);
             }
             if let Some(local) = crate::class_lookup::find_class_by_fqn(classes, fqn) {

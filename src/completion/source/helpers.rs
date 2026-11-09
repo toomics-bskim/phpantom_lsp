@@ -610,10 +610,13 @@ pub(crate) fn resolve_first_class_callable_return_type(
                 if classes.is_empty() {
                     None
                 } else if classes.len() == 1 {
-                    Some(PhpType::named(classes[0].fqn()))
+                    Some(PhpType::class_named(classes[0].fqn()))
                 } else {
                     Some(PhpType::union(
-                        classes.iter().map(|c| PhpType::named(c.fqn())).collect(),
+                        classes
+                            .iter()
+                            .map(|c| PhpType::class_named(c.fqn()))
+                            .collect(),
                     ))
                 }
             })

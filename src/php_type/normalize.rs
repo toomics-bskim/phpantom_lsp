@@ -557,6 +557,7 @@ fn hash_for_dedup<H: Hasher>(ty: &PhpType, state: &mut H) {
     }
     match ty.kind() {
         TypeKind::Named(name) => hash_named_identifier(name, state),
+        TypeKind::ClassNamed(name) => hash_identifier(name.trim_start_matches('\\'), state),
         TypeKind::StaticType(name) | TypeKind::ThisType(name) => hash_identifier(name, state),
         TypeKind::Nullable(inner)
         | TypeKind::Array(inner)
@@ -692,6 +693,9 @@ pub(super) fn equivalent_for_dedup(left: &PhpType, right: &PhpType) -> bool {
 
     match (left.kind(), right.kind()) {
         (TypeKind::Named(a), TypeKind::Named(b)) => named_identifiers_equivalent(a, b),
+        (TypeKind::ClassNamed(a), TypeKind::ClassNamed(b)) => {
+            identifiers_equivalent(a.trim_start_matches('\\'), b.trim_start_matches('\\'))
+        }
         (TypeKind::StaticType(a), TypeKind::StaticType(b))
         | (TypeKind::ThisType(a), TypeKind::ThisType(b)) => identifiers_equivalent(a, b),
         (TypeKind::Nullable(a), TypeKind::Nullable(b))

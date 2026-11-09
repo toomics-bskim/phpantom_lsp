@@ -48,6 +48,21 @@ class LegacyOffsetDemo
     }
 }
 
+// Try: complete `$item->` or jump from the parameter's class hint to Pen.
+// In a PHP 5.5/5.6 project, `use Demo\Scaffolding\Pen as int;` and an
+// `int $item` hint resolve to the imported class in the same way. PHPDoc
+// `@param int` still means an integer. Keep the qualified spelling here
+// because modern PHP reserves `int` for the built-in type.
+class LegacyNativeHintDemo
+{
+    /** @return Scaffolding\Pen */
+    public function demo(Scaffolding\Pen $item)
+    {
+        $item->write();
+        return $item;
+    }
+}
+
 // Try: type `new DateT` and accept `DateTime`. The `use DateTime;` statement
 // is inserted at the top of the import list above to maintain alphabetical
 // order (it sorts ahead of the `Demo\Scaffolding\...` imports).

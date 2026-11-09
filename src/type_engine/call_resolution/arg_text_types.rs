@@ -126,7 +126,7 @@ impl Backend {
             // self::class / static::class / parent::class resolve relative
             // to the class at the call site.
             let class_named = if is_self_or_static(name) {
-                ctx.current_class.map(|c| PhpType::named(c.fqn()))
+                ctx.current_class.map(|c| PhpType::class_named(c.fqn()))
             } else if name.eq_ignore_ascii_case("parent") {
                 ctx.current_class
                     .and_then(|c| c.parent_class.as_ref())
@@ -253,10 +253,10 @@ impl Backend {
                     match trimmed {
                         "static" => PhpType::static_type(c.fqn()),
                         "$this" => PhpType::this_type(c.fqn()),
-                        _ => PhpType::named(c.fqn()),
+                        _ => PhpType::class_named(c.fqn()),
                     }
                 } else {
-                    PhpType::named(c.fqn())
+                    PhpType::class_named(c.fqn())
                 }
             });
         }

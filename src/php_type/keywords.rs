@@ -68,21 +68,7 @@ pub(crate) fn with_keyword_lowercase<R>(name: &str, f: impl FnOnce(&str) -> R) -
     })
 }
 
-/// Whether `name` is a type PHP itself accepts in a native declaration.
-///
-/// This is PHP's own list, not the type vocabulary a docblock may draw on:
-/// `resource`, `integer`, `number`, `list`, and every hyphenated PHPStan
-/// spelling are missing from it deliberately. PHP reads an identifier it
-/// does not recognise here as a class name ("`resource` is not a supported
-/// builtin type and will be interpreted as a class name"), so anything
-/// this returns `false` for is a class reference wherever a *native* type
-/// is written, however well a docblock would understand it.
-///
-/// Native type names are reserved keywords, so they match in any casing.
-pub(crate) fn is_native_type_name(name: &str) -> bool {
-    with_ascii_lowercase(name, is_native_type_name_lower)
-}
-
+/// Lowercase names reserved for native types in the modern PHP grammar.
 fn is_native_type_name_lower(lower: &str) -> bool {
     matches!(
         lower,
@@ -248,9 +234,9 @@ pub(crate) fn is_primitive_scalar_name(name: &str) -> bool {
 /// `String`, `Object`, etc. (capitalised), so a case-insensitive check would
 /// produce false positives.
 ///
-/// Used by class resolution to short-circuit lookups for namespace-qualified
-/// type hints like `Tests\Feature\int`, and by type resolution to skip class
-/// loading for names that are obviously not classes.
+/// Used by type resolution to skip class loading for scalar `Named` types.
+/// Known class references must bypass this classifier: PHP 5 allows an
+/// `int` class, and PHPDoc pseudo-type names are not reserved in PHP.
 pub(crate) fn is_builtin_non_class_type(name: &str) -> bool {
     matches!(
         name,

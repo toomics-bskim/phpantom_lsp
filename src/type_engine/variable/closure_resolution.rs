@@ -19,7 +19,7 @@ use mago_span::HasSpan;
 use mago_syntax::cst::sequence::TokenSeparatedSequence;
 use mago_syntax::cst::*;
 
-use crate::atom::{atom, bytes_to_str};
+use crate::atom::bytes_to_str;
 use crate::class_lookup::{Fqn, ResolvedClassLoader};
 use crate::php_type::{PhpType, TypeKind};
 use crate::type_engine::resolver::ResolutionCtx;
@@ -759,7 +759,7 @@ pub(in crate::type_engine) fn inferred_type_is_more_specific(
         || class_loader(Fqn::new(explicit_base)).is_some_and(|explicit| {
             crate::class_lookup::is_subtype_of_typed(
                 inferred,
-                &PhpType::named(explicit.fqn()),
+                &PhpType::class_named(explicit.fqn()),
                 class_loader,
             )
         })
@@ -810,7 +810,7 @@ pub(in crate::type_engine) fn build_receiver_self_type(
     // Only attempt reconstruction when the class declares template
     // params — otherwise there are no generic args to recover.
     if receiver.template_params.is_empty() {
-        return PhpType::named(atom(fqn.as_ref()));
+        return PhpType::class_named(fqn);
     }
 
     // For Eloquent Builder, extract the model name from method return
@@ -849,7 +849,7 @@ pub(in crate::type_engine) fn build_receiver_self_type(
         }
     }
 
-    PhpType::named(atom(fqn.as_ref()))
+    PhpType::class_named(fqn)
 }
 
 /// Try to extract concrete generic args from a class's own methods.

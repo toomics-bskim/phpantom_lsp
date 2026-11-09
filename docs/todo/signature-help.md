@@ -39,6 +39,11 @@ in the first-class-callable assignments collected from the AST
 (`parser::with_fcc_assignments`). Closures and arrow functions assigned
 to variables are not collected there, so they get no signature help.
 
+The same missing callable target also prevents argument diagnostics for
+`$fn = function (int $value) {}; $fn(array());` on modern PHP, and for
+`class int {}; $fn = function (int $value) {}; $fn(1);` on PHP 5.
+Include argument checks when connecting the variable's callable type.
+
 #### Implementation
 
 1. **Resolve the variable's type** — ask the shared resolver for the

@@ -207,6 +207,14 @@ The substitution engine in `inheritance.rs` operates on
 `HashMap<String, PhpType>` so that template parameter replacement
 never re-parses type strings.
 
+Native hints use the source grammar's version, independently of the API
+target that filters modern stubs. `PhpType::class_named` preserves known
+class references: a name colliding with a type keyword uses `ClassNamed`,
+so PHP 5's class `int` cannot become the scalar `int`. It keeps the written
+name until declaration-site qualification and displays as `\int` when a
+global class would otherwise be ambiguous. Ordinary class names retain
+`Named`; class-producing paths must use `class_named` rather than `named`.
+
 Types are hash-consed: every constructor routes through the interner in
 `php_type/intern.rs`, so two structurally equal types always share one
 allocation. That is what lets a type occurrence cost 8 bytes rather

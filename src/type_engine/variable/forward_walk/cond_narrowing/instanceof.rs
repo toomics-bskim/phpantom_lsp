@@ -830,7 +830,7 @@ fn include_checked_classes(
     let mut results = existing.to_vec();
     // Apply all narrowed classes as a single group by building a union type.
     let union_type = if narrowed_fqns.len() == 1 {
-        PhpType::named(atom(&narrowed_fqns[0]))
+        PhpType::class_named(atom(&narrowed_fqns[0]))
     } else {
         PhpType::union(
             narrowed_fqns

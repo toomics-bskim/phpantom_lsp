@@ -95,6 +95,16 @@ impl PhpType {
         TypeKind::Named(name).into()
     }
 
+    /// A name known to denote a class, even when it collides with a type keyword.
+    /// Ordinary class names keep the existing compact named representation.
+    pub fn class_named(name: Atom) -> PhpType {
+        if is_keyword_type(name.trim_start_matches('\\')) {
+            TypeKind::ClassNamed(name).into()
+        } else {
+            Self::named(name)
+        }
+    }
+
     /// `static` resolved against a class context: the runtime class, known
     /// to be at least `bound`.
     pub fn static_type(bound: Atom) -> PhpType {

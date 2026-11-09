@@ -89,7 +89,7 @@ pub(crate) fn tag_higher_order_proxy_properties(class: &mut ClassInfo, fqn: &str
         return;
     }
 
-    let owner = PhpType::named(atom(fqn));
+    let owner = PhpType::class_named(atom(fqn));
     for property in class.properties.make_mut() {
         let Some(tagged) = tagged_hint(property, fqn, &owner) else {
             continue;

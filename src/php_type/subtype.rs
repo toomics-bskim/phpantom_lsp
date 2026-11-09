@@ -39,6 +39,9 @@ impl PhpType {
             return false;
         }
         match (self.kind(), other.kind()) {
+            (TypeKind::ClassNamed(a), TypeKind::ClassNamed(b)) => a
+                .trim_start_matches('\\')
+                .eq_ignore_ascii_case(b.trim_start_matches('\\')),
             (TypeKind::Named(a), TypeKind::Named(b)) => {
                 Self::short_name_of(a) == Self::short_name_of(b)
             }
@@ -222,6 +225,17 @@ impl PhpType {
     /// Named scalars and classes, `static`/`$this`, literals and integer
     /// ranges.
     fn subtype_of_scalar(&self, supertype: &PhpType) -> Option<bool> {
+        if let TypeKind::ClassNamed(sub) = self.kind() {
+            if let TypeKind::ClassNamed(sup) = supertype.kind() {
+                return Some(
+                    sub.trim_start_matches('\\')
+                        .eq_ignore_ascii_case(sup.trim_start_matches('\\')),
+                );
+            }
+            if supertype.is_object() {
+                return Some(true);
+            }
+        }
         // ── Named ↔ Named scalar subtyping ──────────────────────────
         if let (TypeKind::Named(sub), TypeKind::Named(sup)) = (self.kind(), supertype.kind()) {
             return Some(is_named_subtype(sub, sup));
@@ -230,6 +244,18 @@ impl PhpType {
         // ── StaticType / ThisType <: bound class ────────────────────
         // StaticType(A) <: A and ThisType(A) <: A always hold.
         // ThisType(A) <: StaticType(A) also holds ($this is more specific).
+        if let TypeKind::StaticType(sub) | TypeKind::ThisType(sub) = self.kind()
+            && is_keyword_type(sub.trim_start_matches('\\'))
+        {
+            return match supertype.kind() {
+                TypeKind::ClassNamed(sup) | TypeKind::StaticType(sup) => Some(
+                    sub.trim_start_matches('\\')
+                        .eq_ignore_ascii_case(sup.trim_start_matches('\\')),
+                ),
+                TypeKind::Named(_) => Some(supertype.is_object()),
+                _ => None,
+            };
+        }
         if let TypeKind::StaticType(sub) | TypeKind::ThisType(sub) = self.kind()
             && let TypeKind::Named(sup) | TypeKind::StaticType(sup) = supertype.kind()
         {

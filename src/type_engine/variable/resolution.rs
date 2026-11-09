@@ -105,7 +105,7 @@ pub(super) fn enrich_builder_type_in_scope(
 
     Some(PhpType::generic(
         type_name,
-        vec![PhpType::named(current_class.fqn())],
+        vec![PhpType::class_named(current_class.fqn())],
     ))
 }
 

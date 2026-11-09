@@ -163,6 +163,21 @@ fn type_hint_to_classes_typed_depth(
     }
 
     match ty.kind() {
+        TypeKind::ClassNamed(name) | TypeKind::StaticType(name) | TypeKind::ThisType(name) => {
+            let name = name.trim_start_matches('\\');
+            match lookup_class_declaration(name, all_classes, class_loader) {
+                Some(class) => instantiate_class_type(
+                    class,
+                    name,
+                    &[],
+                    owning_class_name,
+                    all_classes,
+                    class_loader,
+                    produced,
+                ),
+                None => vec![],
+            }
+        }
         // ── Leniency / list-shape / template / unsealed / exact-value markers
         // Unreachable via `kind()`, which sees through all six markers,
         // but the arms keep this match exhaustive over the type language.
@@ -280,16 +295,6 @@ fn type_hint_to_classes_typed_depth(
                 ..ClassInfo::default()
             })]
         }
-
-        TypeKind::StaticType(s) | TypeKind::ThisType(s) => resolve_named_type(
-            s,
-            &[],
-            owning_class_name,
-            all_classes,
-            class_loader,
-            depth,
-            produced,
-        ),
 
         // ── Named type (class name, keyword, or alias) ─────────────
         TypeKind::Named(name) => resolve_named_type(
@@ -446,7 +451,7 @@ fn resolve_named_type(
             .iter()
             .map(|arg| {
                 if arg.is_self_ref() {
-                    PhpType::named(atom(owning_class_name))
+                    PhpType::class_named(atom(owning_class_name))
                 } else {
                     arg.clone()
                 }
@@ -488,75 +493,15 @@ fn resolve_named_type(
     }
 
     match lookup_class_declaration(name, all_classes, class_loader) {
-        Some(cls) => {
-            // ── Eloquent custom collection swapping ────────────────
-            // Only for a returned type hint — see
-            // `type_hint_to_classes_typed_returned`.
-            let cls = if produced {
-                laravel::try_swap_custom_collection(
-                    cls,
-                    name,
-                    generic_args,
-                    all_classes,
-                    class_loader,
-                )
-            } else {
-                cls
-            };
-
-            // A type hint that names a generic class without arguments
-            // (`@var ItemCollection $items`, a bare parameter or return
-            // type) still has to answer member lookups.  Erase every
-            // unsupplied template parameter to its declared default, then
-            // to the bound its `@template` declares (`@template TModel of
-            // Item` → `Item`), or `mixed` when it declares neither. This
-            // keeps a member typed `TModel` concrete instead of leaking the
-            // parameter's own name, matching the treatment that
-            // `new ItemCollection()` already gets.
-            //
-            // A hint naming the enclosing class is left alone: inside its
-            // own body a class's `@template` parameters are in scope, and
-            // a member typed `TModel` means the caller's binding, not the
-            // bound.  `self`/`static` already return the class unerased
-            // above, and a name that resolves back to the same class is
-            // the same reference spelled out.
-            let erased_args: Vec<PhpType>;
-            let generic_args: &[PhpType] = if generic_args.is_empty()
-                && !cls.template_params.is_empty()
-                && !cls.fqn().eq_ignore_ascii_case(owning_class_name)
-            {
-                erased_args = crate::inheritance::default_type_args(&cls);
-                &erased_args
-            } else {
-                generic_args
-            };
-
-            // Apply generic substitution if the type hint carried generic
-            // arguments and the class has template parameters of its own
-            // to substitute, or inherits them from a generic parent it
-            // never bound (a `static<TNewKey, TValue>` rebind on a
-            // concrete collection subclass, a custom Eloquent builder
-            // specialised to its model).
-            if !generic_args.is_empty()
-                && (!cls.template_params.is_empty()
-                    || crate::inheritance::is_extends_only_generic_rebindable(
-                        &cls,
-                        generic_args.len(),
-                        class_loader,
-                    ))
-            {
-                let generic_arg_strings: Vec<String> =
-                    generic_args.iter().map(|a| a.to_string()).collect();
-                vec![virtual_members::resolve_class_for_type_hint(
-                    &cls,
-                    class_loader,
-                    &generic_arg_strings,
-                    generic_args,
-                )]
-            } else {
-                vec![cls]
-            }
-        }
+        Some(cls) => instantiate_class_type(
+            cls,
+            name,
+            generic_args,
+            owning_class_name,
+            all_classes,
+            class_loader,
+            produced,
+        ),
         None => {
             // ── Template parameter bound fallback ──────────────────
             // For a template name that got namespace-qualified on the way.
@@ -585,5 +530,77 @@ fn resolve_named_type(
 
             vec![]
         }
+    }
+}
+
+/// Apply the arguments (or their defaults) to a known class declaration.
+fn instantiate_class_type(
+    cls: Arc<ClassInfo>,
+    name: &str,
+    generic_args: &[PhpType],
+    owning_class_name: &str,
+    all_classes: &[Arc<ClassInfo>],
+    class_loader: &ResolvedClassLoader<'_>,
+    produced: bool,
+) -> Vec<Arc<ClassInfo>> {
+    // ── Eloquent custom collection swapping ────────────────
+    // Only for a returned type hint — see
+    // `type_hint_to_classes_typed_returned`.
+    let cls = if produced {
+        laravel::try_swap_custom_collection(cls, name, generic_args, all_classes, class_loader)
+    } else {
+        cls
+    };
+
+    // A type hint that names a generic class without arguments
+    // (`@var ItemCollection $items`, a bare parameter or return
+    // type) still has to answer member lookups.  Erase every
+    // unsupplied template parameter to its declared default, then
+    // to the bound its `@template` declares (`@template TModel of
+    // Item` → `Item`), or `mixed` when it declares neither. This
+    // keeps a member typed `TModel` concrete instead of leaking the
+    // parameter's own name, matching the treatment that
+    // `new ItemCollection()` already gets.
+    //
+    // A hint naming the enclosing class is left alone: inside its
+    // own body a class's `@template` parameters are in scope, and
+    // a member typed `TModel` means the caller's binding, not the
+    // bound.  `self`/`static` already return the class unerased
+    // above, and a name that resolves back to the same class is
+    // the same reference spelled out.
+    let erased_args: Vec<PhpType>;
+    let generic_args: &[PhpType] = if generic_args.is_empty()
+        && !cls.template_params.is_empty()
+        && !cls.fqn().eq_ignore_ascii_case(owning_class_name)
+    {
+        erased_args = crate::inheritance::default_type_args(&cls);
+        &erased_args
+    } else {
+        generic_args
+    };
+
+    // Apply generic substitution if the type hint carried generic
+    // arguments and the class has template parameters of its own
+    // to substitute, or inherits them from a generic parent it
+    // never bound (a `static<TNewKey, TValue>` rebind on a
+    // concrete collection subclass, a custom Eloquent builder
+    // specialised to its model).
+    if !generic_args.is_empty()
+        && (!cls.template_params.is_empty()
+            || crate::inheritance::is_extends_only_generic_rebindable(
+                &cls,
+                generic_args.len(),
+                class_loader,
+            ))
+    {
+        let generic_arg_strings: Vec<String> = generic_args.iter().map(|a| a.to_string()).collect();
+        vec![virtual_members::resolve_class_for_type_hint(
+            &cls,
+            class_loader,
+            &generic_arg_strings,
+            generic_args,
+        )]
+    } else {
+        vec![cls]
     }
 }

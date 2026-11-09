@@ -16,13 +16,42 @@ use super::{
     is_param_available_for_version,
 };
 
-/// Convert a Mago [`Hint`] AST node directly to a [`PhpType`].
-///
-/// Since `Hint` only represents native PHP type syntax (no
-/// generics, shapes, or callables), the mapping is straightforward.
+/// A native hint's class name under the source file's language version.
+pub(crate) fn native_hint_class_name<'a>(hint: &'a Hint<'_>) -> Option<&'a str> {
+    if let Hint::Identifier(identifier) = hint {
+        return Some(bytes_to_str(identifier.value()));
+    }
+    let legacy_name = match hint {
+        Hint::Integer(name) | Hint::Float(name) | Hint::Bool(name) | Hint::String(name) => {
+            Some((name.value, mago_php_version::PHPVersion::PHP70))
+        }
+        Hint::Void(name) | Hint::Iterable(name) => {
+            Some((name.value, mago_php_version::PHPVersion::PHP71))
+        }
+        Hint::Object(name) => Some((name.value, mago_php_version::PHPVersion::PHP72)),
+        Hint::Mixed(name) => Some((name.value, mago_php_version::PHPVersion::PHP80)),
+        Hint::Null(name) | Hint::False(name) => {
+            Some((name.value, mago_php_version::PHPVersion::PHP80))
+        }
+        Hint::True(name) => Some((name.value, mago_php_version::PHPVersion::PHP82)),
+        Hint::Never(name) => Some((name.value, mago_php_version::PHPVersion::PHP81)),
+        _ => None,
+    };
+    if let Some((name, introduced)) = legacy_name
+        && super::source_version() < introduced
+    {
+        return Some(bytes_to_str(name));
+    }
+    None
+}
+
+/// Convert a native PHP type hint using the active source grammar.
 pub(crate) fn extract_hint_type(hint: &Hint) -> PhpType {
+    if let Some(name) = native_hint_class_name(hint) {
+        return PhpType::class_named(atom(name));
+    }
     match hint {
-        Hint::Identifier(ident) => PhpType::named(atom(bytes_to_str(ident.value()))),
+        Hint::Identifier(ident) => PhpType::class_named(atom(bytes_to_str(ident.value()))),
         Hint::Nullable(nullable) => PhpType::nullable(extract_hint_type(nullable.hint)),
         Hint::Union(union) => {
             let mut members = Vec::new();

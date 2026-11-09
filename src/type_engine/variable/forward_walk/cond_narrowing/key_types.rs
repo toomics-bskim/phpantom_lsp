@@ -80,7 +80,7 @@ fn resolve_static_property_key_type(
         other => ctx.written_names().resolve_class(other),
     };
     let owners = crate::type_engine::type_resolution::type_hint_to_classes_typed(
-        &PhpType::named(crate::atom::atom(&class_name)),
+        &PhpType::class_named(crate::atom::atom(&class_name)),
         &ctx.current_class.fqn(),
         ctx.file.all_classes,
         ctx.file.class_loader,

@@ -981,7 +981,7 @@ fn class_string_template_argument(
     // Try to extract a class name from the argument expression.
     if let Some(class_name) = extract_class_string_from_expr(arg_expr) {
         let fqn = ctx.written_names().resolve_class(&class_name);
-        return Some(PhpType::named(atom(&fqn)));
+        return Some(PhpType::class_named(atom(&fqn)));
     }
 
     // A variable holding a class name, read like any other variable: from
@@ -996,7 +996,7 @@ fn class_string_template_argument(
                 ctx,
             );
         if let Some(first) = targets.first() {
-            return Some(PhpType::named(first.fqn()));
+            return Some(PhpType::class_named(first.fqn()));
         }
     }
 

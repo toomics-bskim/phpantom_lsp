@@ -49,7 +49,7 @@ pub(super) fn resolve_rhs_instantiation(
         let parsed_name = if name == "static" {
             PhpType::static_type(atom(&fqn))
         } else {
-            PhpType::named(atom(&fqn))
+            PhpType::class_named(atom(&fqn))
         };
         let classes = crate::type_engine::type_resolution::type_hint_to_classes_typed(
             &parsed_name,

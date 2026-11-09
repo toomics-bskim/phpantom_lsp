@@ -46,6 +46,7 @@ impl fmt::Display for PhpType {
                 }
             }
             TypeKind::Named(s) => write!(f, "{s}"),
+            TypeKind::ClassNamed(s) => write!(f, "\\{}", s.trim_start_matches('\\')),
             // The value is the template, whatever it is known to be.
             TypeKind::TemplateParam(name, _) => write!(f, "{name}"),
             TypeKind::StaticType(bound) => write!(f, "static({bound})"),

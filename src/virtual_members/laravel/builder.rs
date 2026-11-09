@@ -56,7 +56,7 @@ pub(crate) fn model_builder_type(
             || crate::atom::atom(ELOQUENT_BUILDER_FQN),
             |builder| builder.fqn(),
         );
-    PhpType::generic_atom(name, vec![PhpType::named(model.fqn())])
+    PhpType::generic_atom(name, vec![PhpType::class_named(model.fqn())])
 }
 
 /// Build static virtual methods by forwarding Eloquent Builder's public
@@ -101,7 +101,7 @@ pub(super) fn build_builder_forwarded_methods(
 
     // Build a substitution map: TModel → concrete model class name,
     // and static/$this/self → Builder<ConcreteModel>.
-    let builder_self_type = PhpType::generic(&builder_fqn, vec![PhpType::named(class.fqn())]);
+    let builder_self_type = PhpType::generic(&builder_fqn, vec![PhpType::class_named(class.fqn())]);
     let mut subs = super::self_ref_subs(builder_self_type.clone());
     insert_builder_template_substitutions(
         &mut subs,
@@ -338,7 +338,7 @@ fn insert_builder_template_substitutions(
     builder_fqn: &str,
     class_loader: &ResolvedClassLoader<'_>,
 ) {
-    let model_type = PhpType::named(model_class.fqn());
+    let model_type = PhpType::class_named(model_class.fqn());
     for param in &builder_class.template_params {
         subs.insert(param.to_string(), model_type.clone());
     }

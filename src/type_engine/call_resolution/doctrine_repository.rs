@@ -51,7 +51,7 @@ pub(crate) fn repository_at_call(
         };
         let entity = (ctx.file.class_loader)(Fqn::new(name))?;
         let repository = repository_for(&entity, ctx)?;
-        let entity = PhpType::named(entity.fqn());
+        let entity = PhpType::class_named(entity.fqn());
         match repositories
             .iter_mut()
             .find(|(known, _)| *known == repository)
@@ -65,7 +65,7 @@ pub(crate) fn repository_at_call(
     for (repository, entities) in repositories {
         let class = (ctx.file.class_loader)(Fqn::new(&repository))?;
         types.push(if class.template_params.is_empty() {
-            PhpType::named(class.fqn())
+            PhpType::class_named(class.fqn())
         } else {
             PhpType::generic_atom(class.fqn(), vec![PhpType::union(entities)])
         });

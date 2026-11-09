@@ -524,7 +524,7 @@ pub(crate) fn class_string_inner_binding(
             Some(cls) => cls.fqn().to_string(),
             None => content.to_string(),
         };
-        return Some(PhpType::named(atom(&fqn)));
+        return Some(PhpType::class_named(atom(&fqn)));
     }
 
     class_string_inner_from_type(&Backend::resolve_arg_text_to_type(arg_text, ctx)?)

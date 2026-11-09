@@ -73,6 +73,7 @@ impl PhpType {
                 LiteralValue::Float(_) => value.parse_f64().is_none_or(|value| value != 0.0),
             }),
             TypeKind::Named(name) => named_truthiness(name),
+            TypeKind::ClassNamed(_) | TypeKind::StaticType(_) | TypeKind::ThisType(_) => Some(true),
             // `class-string<Foo>` names a class and `Collection<int>` is an
             // instance of one, so each is truthy whatever its arguments.
             TypeKind::Generic(generic) => named_truthiness(&generic.name),

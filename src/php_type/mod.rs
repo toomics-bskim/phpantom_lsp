@@ -11,6 +11,8 @@
 //! eighty variants and borrows from the parse arena. `PhpType` is simpler:
 //! keyword types are collapsed into `Named`, generic-parameterised references
 //! become `Generic`, and rarely-used variants fall back to `Raw`.
+//! `ClassNamed` keeps a class whose spelling collides with a type keyword
+//! distinct from that keyword, such as a PHP 5 native `int` class hint.
 //!
 //! `PhpType::parse()` never fails. If the input cannot be parsed or mapped,
 //! it returns `PhpType::raw(input)`.
@@ -324,6 +326,11 @@ pub enum TypeKind {
     /// values live in [`TypeKind::Literal`], not here, so the interner is
     /// never fed unbounded free text.
     Named(Atom),
+
+    /// A class reference whose spelling also names a built-in or PHPDoc type.
+    /// Native legacy hints must keep `int` as a class through qualification;
+    /// the scalar `int` remains `Named("int")` and has a different identity.
+    ClassNamed(Atom),
 
     /// Late-static-binding type with a known lower bound.
     ///

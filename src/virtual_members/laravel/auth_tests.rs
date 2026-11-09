@@ -12,7 +12,7 @@ fn model_resolver(name: &str) -> Option<String> {
 }
 
 fn named(fqn: &str) -> PhpType {
-    PhpType::named(atom(fqn))
+    PhpType::class_named(atom(fqn))
 }
 
 fn contract() -> PhpType {

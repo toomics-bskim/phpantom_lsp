@@ -96,9 +96,9 @@ hint; it is not evidence of support for the later primitive type.
 
 ## Delivery order
 
-Each numbered item is one implementation task and one PR. LP8–LP9 establish
-shared version-aware parsing and call
-resolution; LP10–LP17 address the remaining semantic and inference gaps.
+Each numbered item is one implementation task and one PR. LP9 establishes
+legacy constructor resolution; LP10–LP17 address the remaining semantic
+and inference gaps.
 LP19 covers the remaining edit producers; LP18 qualifies the final support
 claim. Dependencies below are explicit;
 items can move into scheduled sprints without changing their scope.
@@ -106,29 +106,6 @@ items can move into scheduled sprints without changing their scope.
 Reproduced defects should receive GitHub issues with the audit sample
 and target version attached, especially LP9. This
 document records the work; it does not imply issues have been opened.
-
-## LP8. Native type hints retain PHP 5 class-name meaning
-
-**Impact: High · Complexity: High**
-
-**Evidence.** `scalar_type_mismatch` declares `function f(int $x)` and
-passes integer `1`. Both reference runtimes reject the argument because
-`int` names a class; PHPantom reports nothing. The `iterable_type` sample
-also passes PHP 5 lint as a class hint.
-
-**Plan.** Distinguish native source hints from PHPDoc and normalized stub
-types. Resolve class names using the declaration's namespace/imports,
-preserve genuine PHP 5 `array` and `callable` hints, and apply primitive
-meaning only at the appropriate language version.
-The shared type representation must distinguish a legacy class named
-`int` from the scalar `int`, including in the global namespace. Updating
-only signature extraction leaves the forward walker and declaration-site
-resolution using different interpretations. Carry source-version context
-through these consumers while keeping modern stub syntax independent.
-
-**Done when.** Namespaced and imported classes with later primitive names
-resolve and validate correctly. PHPDoc `int` remains a scalar and modern
-native scalar hints retain their existing behavior.
 
 ## LP9. Class-name constructors participate in call resolution
 
@@ -311,7 +288,7 @@ their meaning. Record a reproducer for every additional failure found.
 
 ## LP18. Qualify and document the support contract
 
-**Impact: High · Complexity: Medium · Depends on: LP8–LP17, LP19**
+**Impact: High · Complexity: Medium · Depends on: LP9–LP17, LP19**
 
 **Plan.** Expand the regression matrix to remaining language and LSP
 surfaces before claiming full support: include/require and manual

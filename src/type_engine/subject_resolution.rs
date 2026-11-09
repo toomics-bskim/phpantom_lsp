@@ -71,7 +71,7 @@ pub(crate) fn resolve_subject_type(
     match trimmed {
         "self" => {
             let fqn = find_enclosing_class_fqn(ctx.local_classes, access_offset)?;
-            Some(PhpType::named(atom(&fqn)))
+            Some(PhpType::class_named(atom(&fqn)))
         }
         "static" => {
             let fqn = find_enclosing_class_fqn(ctx.local_classes, access_offset)?;

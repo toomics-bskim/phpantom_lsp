@@ -281,7 +281,7 @@ fn push_promoted_properties<'a>(
                 && let Expression::Identifier(ident) = inst.class
             {
                 let fqn = resolve_written_class(bytes_to_str(ident.value()), doc_ctx);
-                return Some(PhpType::named(atom(&fqn)));
+                return Some(PhpType::class_named(atom(&fqn)));
             }
             None
         });

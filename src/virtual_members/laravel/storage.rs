@@ -291,7 +291,7 @@ fn build_driver_registration(
         driver: driver.to_string(),
         return_type: return_type_hint
             .and_then(|rth| resolve_hint_target_fqn(&rth.hint, resolved))
-            .map(|fqn| PhpType::named(atom(&fqn))),
+            .map(|fqn| PhpType::class_named(atom(&fqn))),
         closure_text: expr_source_text(Some(closure_expr), content),
         closure_offset: closure_expr.span().start.offset,
     })

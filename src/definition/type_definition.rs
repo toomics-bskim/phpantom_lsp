@@ -144,19 +144,19 @@ impl Backend {
 
             SymbolKind::SelfStaticParent(ssp_kind) => match ssp_kind {
                 SelfStaticParentKind::Self_ | SelfStaticParentKind::Static => current_class
-                    .map(|cc| vec![PhpType::named(cc.fqn())])
+                    .map(|cc| vec![PhpType::class_named(cc.fqn())])
                     .unwrap_or_default(),
                 SelfStaticParentKind::This => {
                     let bound = self.resolve_closure_this_types(uri, content, offset);
                     if bound.is_empty() {
                         current_class
-                            .map(|cc| vec![PhpType::named(cc.fqn())])
+                            .map(|cc| vec![PhpType::class_named(cc.fqn())])
                             .unwrap_or_default()
                     } else {
                         bound
                             .iter()
                             .filter_map(|rt| rt.class_info.as_ref())
-                            .map(|cls| PhpType::named(cls.fqn()))
+                            .map(|cls| PhpType::class_named(cls.fqn()))
                             .collect()
                     }
                 }
@@ -351,7 +351,7 @@ fn resolve_variable_type_names(
 ) -> Option<PhpType> {
     // $this resolves to the enclosing class.
     if name == "this" {
-        return current_class.map(|cc| PhpType::named(cc.fqn()));
+        return current_class.map(|cc| PhpType::class_named(cc.fqn()));
     }
 
     // Delegate to the unified pipeline.

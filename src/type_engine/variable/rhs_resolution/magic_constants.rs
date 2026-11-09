@@ -180,7 +180,7 @@ pub(super) fn magic_constant_type(
             PhpType::class_string(None)
         }
         MagicConstant::Class(_) => {
-            PhpType::class_string(Some(PhpType::named(ctx.current_class.fqn())))
+            PhpType::class_string(Some(PhpType::class_named(ctx.current_class.fqn())))
         }
         MagicConstant::Trait(_) if ctx.current_class.kind == ClassLikeKind::Trait => {
             PhpType::literal_string_value(ctx.current_class.fqn())

@@ -41,7 +41,9 @@ impl Backend {
         if function.unverified_doc_types.is_empty() {
             return;
         }
-        let loader = |name: Fqn<'_>| self.find_indexed_class(&PhpType::parse(&name));
+        let loader = |name: Fqn<'_>| {
+            self.find_indexed_class(&PhpType::class_named(crate::atom::atom(&name)))
+        };
         crate::type_engine::type_ops::docblock_narrowing::verify_function(function, &loader);
     }
 

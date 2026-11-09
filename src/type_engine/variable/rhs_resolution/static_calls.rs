@@ -379,7 +379,10 @@ fn static_call_on_class_strings(
             &mr_ctx,
         );
         for r in results {
-            union_classes.push(ResolvedType::from_both_arc(PhpType::named(r.fqn()), r));
+            union_classes.push(ResolvedType::from_both_arc(
+                PhpType::class_named(r.fqn()),
+                r,
+            ));
         }
     }
     if union_types.is_empty() {

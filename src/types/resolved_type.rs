@@ -44,7 +44,7 @@ impl ResolvedType {
     /// but loses generic parameters.  Future sprints will populate the
     /// type string from the actual return type annotation.
     pub fn from_class(class: ClassInfo) -> Self {
-        let type_string = PhpType::named(class.fqn());
+        let type_string = PhpType::class_named(class.fqn());
         Self {
             type_string,
             class_info: Some(Arc::new(class)),
@@ -56,7 +56,7 @@ impl ResolvedType {
     /// as the type string.  Avoids cloning when the caller already holds
     /// an `Arc`.
     pub fn from_arc(class: Arc<ClassInfo>) -> Self {
-        let type_string = PhpType::named(class.fqn());
+        let type_string = PhpType::class_named(class.fqn());
         Self {
             type_string,
             class_info: Some(class),
@@ -270,7 +270,11 @@ impl ResolvedType {
         }
         let Some(members) = results
             .iter()
-            .map(|rt| rt.class_info.as_ref().map(|c| PhpType::named(c.fqn())))
+            .map(|rt| {
+                rt.class_info
+                    .as_ref()
+                    .map(|c| PhpType::class_named(c.fqn()))
+            })
             .collect::<Option<Vec<_>>>()
         else {
             return;
@@ -302,7 +306,7 @@ impl ResolvedType {
             // collection, not the one `self` names.
             let type_hint = match type_hint.non_null_type() {
                 Some(inner) if is_bare_self(&inner) => type_hint.replace_bare_self(&class.fqn()),
-                None if is_bare_self(&type_hint) => PhpType::named(class.fqn()),
+                None if is_bare_self(&type_hint) => PhpType::class_named(class.fqn()),
                 _ => type_hint,
             };
             vec![ResolvedType::from_both_arc(type_hint, class)]
@@ -425,6 +429,7 @@ impl ResolvedType {
                         // Keep members that were not resolved to a class.
                         match m.kind() {
                             TypeKind::Named(n)
+                            | TypeKind::ClassNamed(n)
                             | TypeKind::StaticType(n)
                             | TypeKind::ThisType(n) => {
                                 let stripped = n.strip_prefix('\\').unwrap_or(n);

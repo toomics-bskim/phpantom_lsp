@@ -537,10 +537,10 @@ fn infer_element_type<'b>(
                 let fqn = ctx
                     .written_names()
                     .resolve_class(bytes_to_str(ident.value()));
-                Some(PhpType::named(atom(&fqn)))
+                Some(PhpType::class_named(atom(&fqn)))
             }
-            Expression::Self_(_) => Some(PhpType::named(ctx.current_class.fqn())),
-            Expression::Static(_) => Some(PhpType::named(ctx.current_class.fqn())),
+            Expression::Self_(_) => Some(PhpType::class_named(ctx.current_class.fqn())),
+            Expression::Static(_) => Some(PhpType::class_named(ctx.current_class.fqn())),
             _ => None,
         },
         Expression::Call(_) => {

@@ -182,7 +182,7 @@ pub(crate) fn bind_inherited_class_keywords_in_property(
 pub(crate) fn declared_self_type(class: &ClassInfo, subs: &HashMap<String, PhpType>) -> PhpType {
     let fqn = class.fqn();
     if class.template_params.is_empty() {
-        return PhpType::named(fqn);
+        return PhpType::class_named(fqn);
     }
     PhpType::generic_atom(
         fqn,

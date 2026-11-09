@@ -735,6 +735,194 @@ async fn legacy_unopened_files_are_discovered_and_resolved_by_namespace() {
     }
 }
 
+#[test]
+fn legacy_class_types_are_distinct_from_scalars() {
+    use phpantom_lsp::{atom::atom, php_type::PhpType};
+    for name in [
+        "int", "float", "string", "bool", "iterable", "object", "mixed", "void", "never",
+        "resource", "true", "false", "null",
+    ] {
+        let class = PhpType::class_named(atom(name));
+        let scalar = PhpType::parse(name);
+        assert_ne!(class, scalar, "{name}");
+        assert!(!class.equivalent(&scalar), "{name}");
+        assert!(class.is_object_like(), "{name}");
+        assert!(!class.is_scalar(), "{name}");
+        assert_eq!(class.base_name(), Some(name));
+        assert_eq!(class.truthiness(), Some(true));
+        assert!(class.is_subtype_of(&PhpType::object()));
+        assert!(!PhpType::int().is_subtype_of(&class));
+        assert!(
+            class.equivalent(&PhpType::parse(&class.to_string())),
+            "{name}"
+        );
+        let qualified = class.resolve_names(&|name| format!("App\\{name}"));
+        assert_eq!(
+            qualified.class_name(),
+            Some(format!("App\\{name}").as_str())
+        );
+        assert_eq!(qualified.shorten().to_string(), format!("\\App\\{name}"));
+    }
+    let union = PhpType::union(vec![PhpType::int(), PhpType::class_named(atom("int"))]);
+    assert_eq!(union.to_string(), "int|\\int");
+    assert!(PhpType::parse(&union.to_string()).equivalent(&union));
+    let late_static = PhpType::static_type(atom("int"));
+    assert!(!late_static.is_subtype_of(&PhpType::int()));
+    assert!(late_static.is_subtype_of(&PhpType::class_named(atom("int"))));
+    assert!(late_static.is_object_like());
+}
+
+#[tokio::test]
+async fn legacy_closure_hints_and_late_static_returns_keep_class_identity() {
+    for version in [PhpVersion::new(5, 5), PhpVersion::new(5, 6)] {
+        let (dir, backend) = project(version).await;
+        let text = "<?php\nclass int { /** @return static */ function again() { return $this; } }\nfunction take(int $value) {}\n$call = function (int $value) { take($value); take(1); $value->again()->again(); };\n$call(new int());\n";
+        let uri = open(&backend, dir.path(), "closure", text).await;
+        let diagnostics = ready_diagnostics(&backend, &uri).await;
+        assert_eq!(diagnostics.len(), 1, "{version}: {diagnostics:?}");
+        assert_eq!(
+            diagnostics[0].range.start.line, 3,
+            "{version}: {diagnostics:?}"
+        );
+        let pos = common::position_of_last(text, "again()");
+        let targets = common::definition_locations(
+            common::goto_definition_at(&backend, &uri, pos.line, pos.character + 1).await,
+        );
+        assert_eq!(targets.len(), 1, "{version}: {targets:?}");
+        assert_eq!(targets[0].range.start, common::position_of(text, "again()"));
+    }
+}
+
+#[tokio::test]
+async fn legacy_native_hints_resolve_classes_and_reject_scalar_arguments() {
+    for version in [PhpVersion::new(5, 5), PhpVersion::new(5, 6)] {
+        let (dir, backend) = project(version).await;
+        let mut exported = Vec::new();
+        for name in [
+            "int", "float", "string", "bool", "iterable", "object", "mixed", "void", "never",
+            "resource", "true", "false", "null",
+        ] {
+            let text = format!(
+                "<?php\nclass {name} {{ /** @return self */ function legacyMethod() {{ return $this; }} }}\nfunction take{name}({name} $value) {{ $value->legacyMethod()->legacyMethod(); }}\ntake{name}(new {name}());\ntake{name}(1);\n"
+            );
+            let uri = open(&backend, dir.path(), name, &text).await;
+            let diagnostics = ready_diagnostics(&backend, &uri).await;
+            assert_eq!(diagnostics.len(), 1, "{version} {name}: {diagnostics:?}");
+            assert!(
+                common::message_text(&diagnostics[0].message).contains("expects"),
+                "{name}: {diagnostics:?}"
+            );
+            assert_eq!(
+                diagnostics[0].range.start.line, 4,
+                "{name}: {diagnostics:?}"
+            );
+            let hint = text.find(&format!("({name} $value)")).unwrap() + 1;
+            let pos = common::offset_position(&text, hint);
+            let targets = common::definition_locations(
+                common::goto_definition_at(&backend, &uri, pos.line, pos.character).await,
+            );
+            assert_eq!(targets.len(), 1, "{name} native hint: {targets:?}");
+            assert_eq!(
+                targets[0].range.start,
+                common::position_of(&text, &format!("class {name}"))
+            );
+            let positive = text.replace(
+                &format!("take{name}(1);"),
+                &format!("$probe = get_class(new {name}());"),
+            );
+            exported.push(runtime_case(name, &positive, &json!(["string", name])));
+            let rejection = text.replace(&format!("take{name}(1);"), &format!("set_error_handler(function () {{ throw new Exception(); }}); $probe = false; try {{ take{name}(1); }} catch (Exception $error) {{ $probe = true; }} restore_error_handler();"));
+            exported.push(runtime_case(
+                &format!("{name}_reject_scalar"),
+                &rejection,
+                &json!(["boolean", true]),
+            ));
+            let pos = common::position_of(&text, "$value->legacyMethod");
+            let hover = common::markup_hover_at(&backend, &uri, pos.line, pos.character + 2).await;
+            assert!(hover.contains(&format!("\\{name}")), "{name}: {hover}");
+            let pos = common::position_of_last(&text, "legacyMethod()");
+            let targets = common::definition_locations(
+                common::goto_definition_at(&backend, &uri, pos.line, pos.character + 2).await,
+            );
+            assert_eq!(targets.len(), 1, "{name}: {targets:?}");
+            assert_eq!(
+                targets[0].range.start,
+                common::position_of(&text, "legacyMethod()")
+            );
+            let cut = text.find("$value->legacyMethod").unwrap() + "$value->".len();
+            let edited = &text[..cut];
+            let uri = open(&backend, dir.path(), name, edited).await;
+            let pos = common::offset_position(edited, edited.len());
+            let completion =
+                common::completion_response(&backend, &uri, pos.line, pos.character, None).await;
+            assert!(
+                serde_json::to_value(completion)
+                    .unwrap()
+                    .to_string()
+                    .contains("legacyMethod"),
+                "{name}"
+            );
+        }
+        if let Some(output) = std::env::var_os("PHPANTOM_COMPAT_OUTPUT") {
+            std::fs::create_dir_all(&output).unwrap();
+            std::fs::write(
+                Path::new(&output).join(format!("native-hints-{version}.json")),
+                serde_json::to_vec_pretty(
+                    &json!({"target": version.to_string(), "cases": exported}),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+async fn legacy_native_hints_keep_declaration_namespaces_and_imports() {
+    for version in [PhpVersion::new(5, 5), PhpVersion::new(5, 6)] {
+        let (dir, backend) = project(version).await;
+        let declaration = "<?php\nnamespace { class int { function globalOnly() {} } }\nnamespace Model { class int { function modelOnly() {} function same(int $item) { $item->modelOnly(); } } }\nnamespace Service {\nuse Model\\int as iterable;\nuse int as GlobalInteger;\nclass Consumer {\nfunction accept(iterable $item) { $item->modelOnly(); }\nfunction globalValue(GlobalInteger $item) { $item->globalOnly(); }\n}\n}\n";
+        let declared = open(&backend, dir.path(), "declarations", declaration).await;
+        assert!(ready_diagnostics(&backend, &declared).await.is_empty());
+        // A fresh session must read the callee's native hints from disk.
+        let backend = Backend::new_test_with_full_stubs();
+        common::initialize_with_options(&backend, &dunce::canonicalize(dir.path()).unwrap(), None)
+            .await;
+        let caller = "<?php\nnamespace Caller;\n$service = new \\Service\\Consumer();\n$service->accept(new \\Model\\int());\n$service->globalValue(new \\int());\n$service->accept(new \\int());\n$service->globalValue(new \\Model\\int());\n";
+        let uri = open(&backend, dir.path(), "caller", caller).await;
+        let diagnostics = ready_diagnostics(&backend, &uri).await;
+        let lines: Vec<_> = diagnostics.iter().map(|d| d.range.start.line).collect();
+        assert_eq!(lines, vec![5, 6], "{version}: {diagnostics:?}");
+    }
+}
+
+#[tokio::test]
+async fn legacy_hints_preserve_phpdoc_and_modern_native_primitives() {
+    for version in [
+        PhpVersion::new(5, 5),
+        PhpVersion::new(5, 6),
+        PhpVersion::new(7, 0),
+        PhpVersion::new(8, 5),
+    ] {
+        let (dir, backend) = project(version).await;
+        let text = "<?php\n/** @param int $value */\nfunction documented($value) {}\nfunction nativeArray(array $value) {}\nfunction nativeCallable(callable $value) {}\ndocumented(1);\nnativeArray(array(1));\nnativeCallable(function () {});\ndocumented(array());\nnativeArray(1);\nnativeCallable(1);\n";
+        let uri = open(&backend, dir.path(), "controls", text).await;
+        let diagnostics = ready_diagnostics(&backend, &uri).await;
+        let lines: Vec<_> = diagnostics.iter().map(|d| d.range.start.line).collect();
+        assert_eq!(lines, vec![8, 9, 10], "{version}: {diagnostics:?}");
+        if version.major >= 7 {
+            let text = "<?php function scalar(int $value) {} scalar(1); scalar(array());";
+            let uri = open(&backend, dir.path(), "modern", text).await;
+            let diagnostics = ready_diagnostics(&backend, &uri).await;
+            assert_eq!(diagnostics.len(), 1, "{version}: {diagnostics:?}");
+            assert!(
+                common::message_text(&diagnostics[0].message).contains("expects int"),
+                "{version}: {diagnostics:?}"
+            );
+        }
+    }
+}
+
 #[tokio::test]
 async fn legacy_targets_report_unsupported_syntax() {
     let audit = audit();

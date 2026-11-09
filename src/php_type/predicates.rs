@@ -686,6 +686,9 @@ impl PhpType {
     /// scalars (`int`, `string`, …), keywords (`mixed`, `void`, …),
     /// and non-`Named` variants.
     pub fn class_name(&self) -> Option<&str> {
+        if let TypeKind::ClassNamed(name) = self.kind() {
+            return Some(name.trim_start_matches('\\'));
+        }
         if let TypeKind::Named(name) = self.kind()
             && is_class_like_name(name)
         {
@@ -823,10 +826,11 @@ impl PhpType {
     /// Returns true when this type represents an object (class instance, object keyword, or object shape).
     pub fn is_object_like(&self) -> bool {
         match self.kind() {
+            TypeKind::ClassNamed(_) => true,
             TypeKind::Named(s) => s.eq_ignore_ascii_case("object") || !is_scalar_name(s),
             TypeKind::Generic(g) => !is_scalar_name(&g.name),
             TypeKind::ObjectShape(_) => true,
-            TypeKind::StaticType(s) | TypeKind::ThisType(s) => !is_scalar_name(s),
+            TypeKind::StaticType(_) | TypeKind::ThisType(_) => true,
             TypeKind::Nullable(inner) => inner.is_object_like(),
             _ => false,
         }
@@ -887,6 +891,7 @@ impl PhpType {
     /// callables, shapes, and other non-class types.
     pub fn base_name(&self) -> Option<&str> {
         match self.kind() {
+            TypeKind::ClassNamed(s) => Some(s.trim_start_matches('\\')),
             TypeKind::Named(s) if !is_scalar_name(s) => {
                 Some(s.strip_prefix('\\').unwrap_or(s.as_str()))
             }
@@ -926,6 +931,7 @@ impl PhpType {
     /// avoiding a parse round-trip.
     pub fn to_native_hint_typed(&self) -> Option<PhpType> {
         match self.raw_kind() {
+            TypeKind::ClassNamed(_) => Some(self.clone()),
             TypeKind::Benevolent(inner)
             | TypeKind::ListShape(inner)
             | TypeKind::TemplateParam(_, inner)
@@ -1119,7 +1125,7 @@ impl PhpType {
     /// `Raw`, and `Nullable(Named(_))`.
     pub fn has_type_structure(&self) -> bool {
         match self.kind() {
-            TypeKind::Named(_) | TypeKind::Raw(_) => false,
+            TypeKind::Named(_) | TypeKind::ClassNamed(_) | TypeKind::Raw(_) => false,
             TypeKind::Nullable(inner) => inner.has_type_structure(),
             TypeKind::Union(members) => members.iter().any(|m| m.has_type_structure()),
             TypeKind::Intersection(members) => members.iter().any(|m| m.has_type_structure()),
@@ -1143,6 +1149,7 @@ impl PhpType {
     /// parse→check round-trip when the caller already has a `PhpType`.
     pub fn is_informative(&self) -> bool {
         match self.raw_kind() {
+            TypeKind::ClassNamed(_) => true,
             TypeKind::Benevolent(inner)
             | TypeKind::ListShape(inner)
             | TypeKind::ClassNameLiteral(inner)
@@ -1218,6 +1225,7 @@ impl PhpType {
                 .widened
                 .references_any_template_param(template_params),
             TypeKind::Named(name) => template_params.iter().any(|p| p == name),
+            TypeKind::ClassNamed(_) => false,
             TypeKind::TemplateParam(name, bound) => {
                 template_params.iter().any(|p| p == name)
                     || bound.references_any_template_param(template_params)

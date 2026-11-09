@@ -45,6 +45,7 @@ fn is_unloadable_short_name(ty: &PhpType, class_loader: &ResolvedClassLoader<'_>
 /// including a keyword such as `object` or `array<int>`.
 fn class_like_base_name(ty: &PhpType) -> Option<&str> {
     let name = match ty.kind() {
+        TypeKind::ClassNamed(n) => return Some(n.trim_start_matches('\\')),
         TypeKind::Named(n) => n.as_str(),
         TypeKind::Generic(g) => g.name.as_str(),
         _ => return None,

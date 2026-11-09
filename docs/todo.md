@@ -205,7 +205,6 @@ source syntax, runtime semantics, built-ins, and editor behavior.
 
 | # | Item | Impact | Complexity |
 | --- | --- | --- | --- |
-| LP8 | [Native type hints retain PHP 5 class-name meaning](todo/legacy-php.md#lp8-native-type-hints-retain-php-5-class-name-meaning) | High | High |
 | LP9 | [Class-name constructors participate in call resolution](todo/legacy-php.md#lp9-class-name-constructors-participate-in-call-resolution) | High | Medium-High |
 | LP10 | [Loose comparisons narrow by the target semantics](todo/legacy-php.md#lp10-loose-comparisons-narrow-by-the-target-semantics) | High | High |
 | LP11 | [Resolve legacy dynamic variable binding](todo/legacy-php.md#lp11-resolve-legacy-dynamic-variable-binding) | Medium-High | High |

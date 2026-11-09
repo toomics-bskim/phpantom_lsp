@@ -36,7 +36,7 @@ pub(crate) fn receiver_type_for_condition(
     template_subs: &HashMap<String, PhpType>,
 ) -> PhpType {
     if class_template_params.is_empty() {
-        return PhpType::named(atom(declaring_fqn));
+        return PhpType::class_named(atom(declaring_fqn));
     }
     let args = class_template_params
         .iter()

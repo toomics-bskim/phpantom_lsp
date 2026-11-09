@@ -110,7 +110,7 @@ fn pivot_type_for(
         && let Some(name) = pivot.base_name()
     {
         if let Some(cls) = resolve_related_fqn(name, declaring, loader) {
-            return PhpType::named(cls.fqn());
+            return PhpType::class_named(cls.fqn());
         }
         return PhpType::named(atom(name.trim_start_matches(char::from(92))));
     }

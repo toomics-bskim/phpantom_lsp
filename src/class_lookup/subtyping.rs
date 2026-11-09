@@ -646,7 +646,7 @@ pub(crate) fn is_subtype_of_typed(
     if let Some(sub) = subtype.base_name()
         && let TypeKind::Named(sup) = supertype.kind()
     {
-        if sup.eq_ignore_ascii_case("object") && crate::php_type::is_class_like_name(sub) {
+        if sup.eq_ignore_ascii_case("object") {
             return true;
         }
         if sup.eq_ignore_ascii_case("iterable")

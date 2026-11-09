@@ -141,7 +141,7 @@ fn build_forwarded_methods(
         crate::virtual_members::resolve_class_fully_maybe_cached(&concrete, class_loader, cache);
 
     // A fluent method returns the concrete instance, not the facade.
-    let subs = super::self_ref_subs(PhpType::named(resolved.fqn()));
+    let subs = super::self_ref_subs(PhpType::class_named(resolved.fqn()));
     let fp = crate::virtual_members::TransformFingerprint::new(
         Some(&subs),
         None,

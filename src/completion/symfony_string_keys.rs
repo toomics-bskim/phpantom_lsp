@@ -552,7 +552,7 @@ impl Backend {
             .find_map(|resolved| {
                 let class = resolved.class_info?;
                 self.typed_receiver_key_kind(
-                    &crate::php_type::PhpType::named(class.fqn()),
+                    &crate::php_type::PhpType::class_named(class.fqn()),
                     method,
                     index,
                     receiver,

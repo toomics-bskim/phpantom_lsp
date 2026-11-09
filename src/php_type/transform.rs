@@ -35,12 +35,12 @@ impl<'a> LsbBinding<'a> {
     fn bound_over(self, replacement: &PhpType) -> Option<Atom> {
         match self {
             LsbBinding::Inherit => match replacement.kind() {
-                TypeKind::Named(name) => Some(*name),
+                TypeKind::Named(name) | TypeKind::ClassNamed(name) => Some(*name),
                 _ => None,
             },
             LsbBinding::Over(class) => Some(atom(class)),
             LsbBinding::OverType(ty) => match ty.kind() {
-                TypeKind::Named(name) => Some(*name),
+                TypeKind::Named(name) | TypeKind::ClassNamed(name) => Some(*name),
                 _ => None,
             },
             LsbBinding::Fixed => None,
@@ -51,7 +51,11 @@ impl<'a> LsbBinding<'a> {
     /// carries more than a class name to bind over.
     fn whole_type(self) -> Option<&'a PhpType> {
         match self {
-            LsbBinding::OverType(ty) if !matches!(ty.kind(), TypeKind::Named(_)) => Some(ty),
+            LsbBinding::OverType(ty)
+                if !matches!(ty.kind(), TypeKind::Named(_) | TypeKind::ClassNamed(_)) =>
+            {
+                Some(ty)
+            }
             _ => None,
         }
     }
@@ -161,6 +165,7 @@ impl PhpType {
             TypeKind::ValueOf(inner) => PhpType::value_of(map(inner)),
             TypeKind::IndexAccess(target, index) => PhpType::index_access(map(target), map(index)),
             TypeKind::Named(_)
+            | TypeKind::ClassNamed(_)
             | TypeKind::StaticType(_)
             | TypeKind::ThisType(_)
             | TypeKind::IntRange(..)
@@ -230,8 +235,10 @@ impl PhpType {
         match self.raw_kind() {
             TypeKind::Named(s) => match resolve_constant(s) {
                 Some(reference) => PhpType::named(atom(&reference)),
-                None => PhpType::named(resolve(s)),
+                None if is_keyword_type(s) => self.clone(),
+                None => PhpType::class_named(resolve(s)),
             },
+            TypeKind::ClassNamed(name) => PhpType::class_named(atom(&resolver(name))),
             TypeKind::Raw(s) => match resolve_constant(s) {
                 Some(reference) => PhpType::raw(reference),
                 None => self.clone(),
@@ -331,13 +338,16 @@ impl PhpType {
         let short = |name: &str| -> Atom {
             let full = crate::util::strip_fqn_prefix(name);
             let s = Self::short_name_of(full);
-            if ambiguous.iter().any(|a| a.eq_ignore_ascii_case(s)) && !is_keyword_type(full) {
+            if (ambiguous.iter().any(|a| a.eq_ignore_ascii_case(s)) || is_keyword_type(s))
+                && !is_keyword_type(full)
+            {
                 atom(&format!("\\{full}"))
             } else {
                 atom(s)
             }
         };
         match self.raw_kind() {
+            TypeKind::Named(s) if !is_keyword_type(s) => PhpType::class_named(short(s)),
             TypeKind::Named(s) => PhpType::named(short(s)),
             TypeKind::Generic(g) => PhpType::generic_atom(
                 short(&g.name),
@@ -380,7 +390,7 @@ impl PhpType {
     /// assert_eq!(replaced.to_string(), "App\\User | null");
     /// ```
     pub fn replace_self(&self, class_name: &str) -> PhpType {
-        self.replace_self_with_type(&PhpType::named(atom(class_name)))
+        self.replace_self_with_type(&PhpType::class_named(atom(class_name)))
     }
 
     /// Resolve relative class-reference keywords to concrete class names,
@@ -419,11 +429,11 @@ impl PhpType {
                     PhpType::this_type(atom(class_name))
                 } else if s.eq_ignore_ascii_case("parent") {
                     match parent_class {
-                        Some(p) => PhpType::named(atom(p)),
+                        Some(p) => PhpType::class_named(atom(p)),
                         None => self.clone(),
                     }
                 } else {
-                    PhpType::named(atom(class_name))
+                    PhpType::class_named(atom(class_name))
                 }
             }
             TypeKind::Generic(g) => {
@@ -495,7 +505,7 @@ impl PhpType {
     fn replace_bare_keyword(&self, keyword: &str, class_name: &str) -> PhpType {
         match self.raw_kind() {
             TypeKind::Named(s) if s.eq_ignore_ascii_case(keyword) => {
-                PhpType::named(atom(class_name))
+                PhpType::class_named(atom(class_name))
             }
             TypeKind::Generic(g) if g.name.eq_ignore_ascii_case(keyword) => PhpType::generic_atom(
                 atom(class_name),
@@ -699,7 +709,7 @@ impl PhpType {
             TypeKind::IndexAccess(base, index) => {
                 base.contains_name_matching(pred) || index.contains_name_matching(pred)
             }
-            TypeKind::StaticType(_) | TypeKind::ThisType(_) => false,
+            TypeKind::StaticType(_) | TypeKind::ThisType(_) | TypeKind::ClassNamed(_) => false,
             TypeKind::Literal(_) | TypeKind::Raw(_) | TypeKind::IntRange(_, _) => false,
         }
     }
@@ -1025,6 +1035,7 @@ impl PhpType {
     /// are skipped.
     fn for_each_class_name<'a>(&'a self, f: &mut impl FnMut(&'a str)) {
         match self.raw_kind() {
+            TypeKind::ClassNamed(s) => f(s.trim_start_matches('\\')),
             TypeKind::Benevolent(inner)
             | TypeKind::ListShape(inner)
             | TypeKind::TemplateParam(_, inner)
@@ -1120,6 +1131,12 @@ impl PhpType {
     /// params/return, shapes, class-string inner types, etc.
     fn collect_top_level_class_names(&self, names: &mut Vec<String>) {
         match self.kind() {
+            TypeKind::ClassNamed(s) => {
+                let name = s.trim_start_matches('\\');
+                if !names.iter().any(|n| n == name) {
+                    names.push(name.to_string());
+                }
+            }
             TypeKind::Named(s)
                 if !is_keyword_type(s)
                     && !s.is_empty()

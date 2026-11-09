@@ -44,7 +44,7 @@ pub(crate) fn resolve_static_access_type(text: &str, ctx: &ResolutionCtx<'_>) ->
     if cls.kind == ClassLikeKind::Enum {
         match cls.constants.iter().find(|c| c.name == _member) {
             Some(c) if c.is_enum_case => return Some(PhpType::enum_case(cls.fqn(), c.name)),
-            None => return Some(PhpType::named(cls.fqn())),
+            None => return Some(PhpType::class_named(cls.fqn())),
             Some(_) => {}
         }
     }

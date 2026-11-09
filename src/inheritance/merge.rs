@@ -653,7 +653,7 @@ fn refine_enum_cases(merged: &mut ClassInfo) {
     if merged.kind != crate::types::ClassLikeKind::Enum {
         return;
     }
-    let list_type = PhpType::list(PhpType::named(merged.fqn()));
+    let list_type = PhpType::list(PhpType::class_named(merged.fqn()));
     if let Some(cases) = merged
         .methods
         .make_mut()

@@ -7,7 +7,7 @@ use crate::Backend;
 use crate::class_loader_memo;
 use crate::class_lookup::Fqn;
 use crate::composer;
-use crate::php_type::{PhpType, is_builtin_non_class_type};
+use crate::php_type::{PhpType, TypeKind};
 use crate::resolution::{ProjectScope, project_scope};
 use crate::types::ClassInfo;
 use crate::util::short_name;
@@ -63,7 +63,12 @@ impl Backend {
         // Defensively strip nullable prefix (`?Foo` → `Foo`) and generic
         // parameters (`Collection<int, User>` → `Collection`) so that
         // callers don't need to normalise before lookup.
-        if let Some(cls) = self.find_or_load_class_typed(&PhpType::parse(class_name)) {
+        let parsed = PhpType::parse(class_name);
+        let class_type = match parsed.kind() {
+            TypeKind::Named(name) => PhpType::class_named(*name),
+            _ => parsed,
+        };
+        if let Some(cls) = self.find_or_load_class_typed(&class_type) {
             return Some(cls);
         }
         // Only reached when every ordinary phase has missed, so a real
@@ -174,7 +179,7 @@ impl Backend {
         // other.
         let loader = |name: Fqn<'_>| {
             sources.borrow_mut().push(name.to_string());
-            let found = self.find_indexed_class(&PhpType::parse(&name));
+            let found = self.find_indexed_class(&PhpType::class_named(crate::atom::atom(&name)));
             missed.set(missed.get() || found.is_none());
             found
         };
@@ -226,12 +231,9 @@ impl Backend {
         // so we match against the last segment of the namespace-qualified name.
         let last_segment = short_name(class_name);
 
-        // ── Short-circuit: scalar/built-in type keywords are never classes ──
-        // The name resolver or variable resolution pipeline sometimes
-        // namespace-qualifies bare type keywords (e.g. `Tests\Feature\int`).
-        // These can never resolve to a class, so bail out immediately to
-        // avoid thousands of wasted lookups per analysis run.
-        if is_builtin_non_class_type(last_segment) {
+        // Only keywords reserved by the project's target can be rejected:
+        // PHP 5 permits classes such as `int`, including inside namespaces.
+        if self.php_version().supports_builtin_type(last_segment) {
             return None;
         }
 

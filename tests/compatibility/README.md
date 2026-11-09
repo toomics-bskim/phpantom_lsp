@@ -6,8 +6,8 @@ Run the PHP-independent checks with:
 cargo test --locked --test legacy_compatibility
 ```
 
-The suite creates isolated projects that explicitly select PHP 5.5, 5.6,
-7.4, and 8.5. It uses the existing integration helpers and the real LSP
+The suite creates isolated projects with explicit legacy and modern PHP
+targets. It uses the existing integration helpers and the real LSP
 handlers, awaits both native diagnostic phases before reading the pull
 report, and checks both LF and CRLF source. A nonzero result ID alone is
 insufficient because the fast phase also publishes one. Trait alias
@@ -67,6 +67,19 @@ and the subsequent release migration guides through
 the later target matrices for the same reference-runtime runner. These are
 lint expectations; language acceptance does not establish runtime type
 inference or availability of an extension.
+
+## Native type hints
+
+Native hints are interpreted using the source file's target, including class
+names that only became built-in types in later PHP releases. The tests keep
+global and namespaced classes, imported aliases, closures, and cross-file
+callers separate from PHPDoc primitives and modern stub declarations. Member
+completion, hover, definition, and argument diagnostics use the same types.
+
+The optional export adds `native-hints-5.5.json` and `native-hints-5.6.json`.
+Run these with the reference-runtime checker to verify both accepted objects
+and rejected scalar arguments. PHP 5's recoverable type errors are converted
+to exceptions in the rejection probes so their outcome can be asserted.
 
 ## Built-in availability
 

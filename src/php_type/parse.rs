@@ -423,6 +423,7 @@ fn convert(src: &str, ty: &cst::Type<'_>) -> PhpType {
                     }
                     PhpType::generic(name, args)
                 }
+                None if name.starts_with('\\') => PhpType::class_named(atom(name)),
                 None => PhpType::named(atom(name)),
             }
         }
