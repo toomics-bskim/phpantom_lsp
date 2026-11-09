@@ -26,7 +26,7 @@ use crate::Backend;
 use crate::atom::{Atom, atom};
 use crate::types::*;
 
-use super::{DocblockCtx, for_each_nested_statement_list, is_removed_for_version};
+use super::{DocblockCtx, for_each_nested_statement_list, is_available_for_version};
 
 impl Backend {
     /// De-duplicate parsed class-likes by `(name, namespace)`, keeping the
@@ -92,7 +92,7 @@ impl Backend {
         for statement in statements {
             match statement {
                 Statement::Class(class) => {
-                    if removed_in_target_version(class, doc_ctx) {
+                    if unavailable_in_target_version(class, &class.attribute_lists, doc_ctx) {
                         continue;
                     }
                     classes.push(class_likes::extract_class(class, doc_ctx));
@@ -100,14 +100,15 @@ impl Backend {
                     Self::find_anonymous_classes_in_members(class.members.iter(), classes, doc_ctx);
                 }
                 Statement::Interface(iface) => {
-                    if removed_in_target_version(iface, doc_ctx) {
+                    if unavailable_in_target_version(iface, &iface.attribute_lists, doc_ctx) {
                         continue;
                     }
                     classes.push(class_likes::extract_interface(iface, doc_ctx));
                     Self::find_anonymous_classes_in_members(iface.members.iter(), classes, doc_ctx);
                 }
                 Statement::Trait(trait_def) => {
-                    if removed_in_target_version(trait_def, doc_ctx) {
+                    if unavailable_in_target_version(trait_def, &trait_def.attribute_lists, doc_ctx)
+                    {
                         continue;
                     }
                     classes.push(class_likes::extract_trait(trait_def, doc_ctx));
@@ -118,7 +119,7 @@ impl Backend {
                     );
                 }
                 Statement::Enum(enum_def) => {
-                    if removed_in_target_version(enum_def, doc_ctx) {
+                    if unavailable_in_target_version(enum_def, &enum_def.attribute_lists, doc_ctx) {
                         continue;
                     }
                     classes.push(class_likes::extract_enum(enum_def, doc_ctx));
@@ -162,12 +163,15 @@ impl Backend {
     }
 }
 
-/// Whether `node`'s docblock has `@removed X.Y` with X.Y at or below the
-/// target PHP version, which drops the declaration.
-fn removed_in_target_version(node: &impl HasSpan, doc_ctx: Option<&DocblockCtx<'_>>) -> bool {
+/// Whether the declaration's release bounds exclude the target PHP version.
+fn unavailable_in_target_version(
+    node: &impl HasSpan,
+    attributes: &Sequence<'_, AttributeList<'_>>,
+    doc_ctx: Option<&DocblockCtx<'_>>,
+) -> bool {
     doc_ctx.is_some_and(|ctx| {
         ctx.php_version
-            .is_some_and(|ver| is_removed_for_version(node, ctx, ver))
+            .is_some_and(|ver| !is_available_for_version(node, attributes, ctx, ver))
     })
 }
 

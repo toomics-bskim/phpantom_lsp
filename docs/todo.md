@@ -205,7 +205,6 @@ source syntax, runtime semantics, built-ins, and editor behavior.
 
 | # | Item | Impact | Complexity |
 | --- | --- | --- | --- |
-| LP5 | [Built-in symbols obey introduction and removal versions](todo/legacy-php.md#lp5-built-in-symbols-obey-introduction-and-removal-versions) | High | Medium-High |
 | LP6 | [Legacy source forms parse with correct spans](todo/legacy-php.md#lp6-legacy-source-forms-parse-with-correct-spans) | High | High |
 | LP7 | [Report syntax unavailable at the selected version](todo/legacy-php.md#lp7-report-syntax-unavailable-at-the-selected-version) | High | Medium-High |
 | LP8 | [Native type hints retain PHP 5 class-name meaning](todo/legacy-php.md#lp8-native-type-hints-retain-php-5-class-name-meaning) | High | High |

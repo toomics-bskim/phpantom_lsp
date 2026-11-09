@@ -75,6 +75,11 @@ zip = { version = "9", default-features = false, features = ["deflate"] }
 tokio = { version = "1.39", features = ["sync", "macros", "rt", "time"] }
 
 [build-dependencies]
+mago-allocator = "=1.58.2"
+mago-database = "=1.58.2"
+mago-names = "=1.58.2"
+mago-span = "=1.58.2"
+mago-syntax = "=1.58.2"
 ureq = "3"
 tar = "0.4"
 flate2 = "1"

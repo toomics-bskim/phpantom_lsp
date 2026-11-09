@@ -83,10 +83,10 @@ pub(crate) struct DocblockCtx<'a> {
     ///
     /// When `Some`, elements annotated with
     /// `#[PhpStormStubsElementAvailable]` whose version range excludes
-    /// this version are filtered out during extraction.  Set when
-    /// parsing phpstorm-stubs; left as `None` for user code (where the
-    /// attribute is never used).
+    /// this version are filtered out during extraction.
     pub php_version: Option<PhpVersion>,
+    /// Whether `@since` describes PHP itself, rather than a library or extension.
+    pub php_release_docblocks: bool,
     /// Use-statement map for the file being parsed.
     ///
     /// Maps short (imported or aliased) names to their fully-qualified
@@ -118,7 +118,7 @@ impl Backend {
         let use_map = self.parse_use_statements(content);
         let constant_imports = self.parse_symbol_imports(content).constants;
         let namespace = self.parse_namespace(content);
-        let (mut classes, blocks) = Self::parse_php_classes_by_block(content, None);
+        let (mut classes, blocks) = Self::parse_php_classes_by_block(content, None, false);
         Self::resolve_parent_class_names_by_block(
             &mut classes,
             &blocks,
@@ -159,11 +159,15 @@ impl Backend {
         content: &str,
         php_version: Option<PhpVersion>,
     ) -> Vec<(ClassInfo, Option<String>)> {
-        Self::parse_php_classes_by_block(content, php_version)
-            .0
-            .into_iter()
-            .map(|(cls, ns, _)| (cls, ns))
-            .collect()
+        Self::parse_php_classes_by_block(
+            content,
+            php_version,
+            crate::stubs::embedded_release_docblocks(content).unwrap_or(true),
+        )
+        .0
+        .into_iter()
+        .map(|(cls, ns, _)| (cls, ns))
+        .collect()
     }
 
     /// A program's `namespace` blocks, each with the imports it declares,
@@ -238,6 +242,7 @@ impl Backend {
     pub(crate) fn parse_php_classes_by_block(
         content: &str,
         php_version: Option<PhpVersion>,
+        php_release_docblocks: bool,
     ) -> (
         Vec<(ClassInfo, Option<String>, Option<usize>)>,
         Vec<NamespaceSpan>,
@@ -256,6 +261,7 @@ impl Backend {
                 trivias: program.trivia.as_slice(),
                 content,
                 php_version,
+                php_release_docblocks,
                 use_map,
                 namespace,
             };
@@ -278,6 +284,7 @@ impl Backend {
                             trivias: doc_ctx.trivias,
                             content: doc_ctx.content,
                             php_version: doc_ctx.php_version,
+                            php_release_docblocks: doc_ctx.php_release_docblocks,
                             use_map: span.use_map.clone(),
                             namespace: span.namespace.clone(),
                         });
@@ -334,6 +341,8 @@ impl Backend {
         content: &str,
         php_version: Option<PhpVersion>,
     ) -> Vec<FunctionInfo> {
+        let php_release_docblocks =
+            crate::stubs::embedded_release_docblocks(content).unwrap_or(true);
         with_parsed_program(content, "parse_functions", |program, content| {
             let mut use_map = HashMap::new();
             Self::extract_use_statements_from_statements(
@@ -347,6 +356,7 @@ impl Backend {
                 trivias: program.trivia.as_slice(),
                 content,
                 php_version,
+                php_release_docblocks,
                 use_map,
                 namespace,
             };

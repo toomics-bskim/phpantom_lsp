@@ -15,7 +15,7 @@ use crate::types::ParameterInfo;
 
 use super::{
     DocblockCtx, apply_array_shape_override, extract_hint_type, extract_language_level_type,
-    extract_parameters, is_available_for_version, is_removed_for_version,
+    extract_parameters, is_available_for_version,
 };
 
 /// The pieces of a function or method signature computed by
@@ -60,8 +60,7 @@ pub(super) fn extract_signature<'a>(
     let php_version = doc_ctx.and_then(|ctx| ctx.php_version);
     if let Some(ctx) = doc_ctx
         && let Some(ver) = php_version
-        && (!is_available_for_version(attribute_lists, ctx, ver)
-            || is_removed_for_version(node, ctx, ver))
+        && !is_available_for_version(node, attribute_lists, ctx, ver)
     {
         return None;
     }

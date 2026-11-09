@@ -90,83 +90,14 @@ pub(crate) fn is_stub_uri(uri: &str) -> bool {
 /// (the `RedisSentinel` constructor took `$options_or_host` in redis 5 and
 /// `$options` in 6), so the stub cannot be trusted to name them right for
 /// the version a project runs.
-const BUNDLED_EXTENSIONS: &[&str] = &[
-    "apache",
-    "bcmath",
-    "bz2",
-    "calendar",
-    "com_dotnet",
-    "core",
-    "ctype",
-    "curl",
-    "date",
-    "dba",
-    "dom",
-    "enchant",
-    "exif",
-    "ffi",
-    "fileinfo",
-    "filter",
-    "fpm",
-    "ftp",
-    "gd",
-    "gettext",
-    "gmp",
-    "hash",
-    "iconv",
-    "imap",
-    "intl",
-    "json",
-    "ldap",
-    "libxml",
-    "litespeed",
-    "mbstring",
-    "mysqli",
-    "oci8",
-    "odbc",
-    "openssl",
-    "pcntl",
-    "pcre",
-    "pdo",
-    "pgsql",
-    "phar",
-    "phpdbg",
-    "posix",
-    "pspell",
-    "random",
-    "readline",
-    "reflection",
-    "session",
-    "shmop",
-    "simplexml",
-    "snmp",
-    "soap",
-    "sockets",
-    "sodium",
-    "spl",
-    "sqlite3",
-    "standard",
-    "sysvmsg",
-    "sysvsem",
-    "sysvshm",
-    "tidy",
-    "tokenizer",
-    "uri",
-    "xml",
-    "xmlreader",
-    "xmlwriter",
-    "xsl",
-    "zend opcache",
-    "zip",
-    "zlib",
-];
+use crate::stub_extensions::BUNDLED_EXTENSIONS;
 
 /// Whether `content`, parsed under `uri`, is the phpstorm-stubs file of an
 /// extension php-src does not ship (see [`BUNDLED_EXTENSIONS`]).
 ///
-/// An embedded file is recognised by its address, since every caller hands
-/// the embedded `&'static str` on unchanged; a checkout under a stub path
-/// by the directory its file sits in.
+/// An embedded file is recognised by its address, or by the URI's symbol
+/// when parsing has copied its source. A checkout under a stub path is
+/// recognised by the directory its file sits in.
 pub(crate) fn is_unbundled_extension_stub(uri: &str, content: &str) -> bool {
     let extension = STUB_FILES
         .iter()
@@ -174,7 +105,18 @@ pub(crate) fn is_unbundled_extension_stub(uri: &str, content: &str) -> bool {
         .map(|i| STUB_FILE_EXTENSIONS[i])
         .or_else(|| {
             if is_embedded_stub_uri(uri) {
-                return None;
+                let (name, map): (&str, &[(&str, usize)]) =
+                    if let Some(name) = uri.strip_prefix(STUB_FUNCTION_URI_PREFIX) {
+                        (name, &STUB_FUNCTION_MAP)
+                    } else if let Some(name) = uri.strip_prefix("phpantom-stub://const/") {
+                        (name, &STUB_CONSTANT_MAP)
+                    } else {
+                        (uri.strip_prefix(STUB_URI_PREFIX)?, &STUB_CLASS_MAP)
+                    };
+                return map
+                    .iter()
+                    .find(|(symbol, _)| symbol.eq_ignore_ascii_case(name))
+                    .map(|&(_, index)| STUB_FILE_EXTENSIONS[index]);
             }
             let mut segments = uri.rsplit('/');
             segments.next();
@@ -186,6 +128,99 @@ pub(crate) fn is_unbundled_extension_stub(uri: &str, content: &str) -> bool {
             .iter()
             .any(|bundled| bundled.eq_ignore_ascii_case(&ext))
     })
+}
+
+/// Whether an embedded source's release tags describe PHP, or `None` for other sources.
+pub(crate) fn embedded_release_docblocks(content: &str) -> Option<bool> {
+    embedded_file_index(content).map(|index| {
+        BUNDLED_EXTENSIONS
+            .iter()
+            .any(|extension| extension.eq_ignore_ascii_case(STUB_FILE_EXTENSIONS[index]))
+    })
+}
+
+fn embedded_file_index(content: &str) -> Option<usize> {
+    static FILES: std::sync::OnceLock<HashMap<usize, usize>> = std::sync::OnceLock::new();
+    FILES
+        .get_or_init(|| {
+            STUB_FILES
+                .iter()
+                .enumerate()
+                .map(|(i, text)| (text.as_ptr() as usize, i))
+                .collect()
+        })
+        .get(&(content.as_ptr() as usize))
+        .copied()
+        .filter(|&index| content.len() == STUB_FILES[index].len())
+}
+
+/// Unavailable global symbols, keyed by full names with PHP's case rules.
+#[derive(Default)]
+pub(crate) struct UnavailableStubNames {
+    classes: crate::ci_map::CiMap<bool>,
+    functions: crate::ci_map::CiMap<bool>,
+    constants: HashMap<String, bool>,
+}
+
+impl UnavailableStubNames {
+    fn record(&mut self, kind: u8, name: &str, available: bool) {
+        let slot = match kind {
+            0 => self.classes.or_insert_with(name, || false),
+            1 => self.functions.or_insert_with(name, || false),
+            _ => self.constants.entry(name.to_owned()).or_insert(false),
+        };
+        *slot |= available;
+    }
+
+    pub(crate) fn contains(&self, kind: StubSymbolKind, name: &str) -> bool {
+        let available = match kind {
+            StubSymbolKind::Class => self.classes.get(name),
+            StubSymbolKind::Function => self.functions.get(name),
+            StubSymbolKind::Constant => self.constants.get(name),
+        };
+        available == Some(&false)
+    }
+}
+
+/// Union declaration variants before filtering. Embedded metadata requires no source parse.
+pub(crate) fn unavailable_stub_names(
+    content: &str,
+    version: crate::types::PhpVersion,
+    trust_docblocks: bool,
+) -> Option<UnavailableStubNames> {
+    let target = u16::from(version.major) * 100 + u16::from(version.minor);
+    let mut result = UnavailableStubNames::default();
+    if let Some(index) = embedded_file_index(content) {
+        let declarations = STUB_AVAILABILITY[index];
+        if declarations.is_empty() {
+            return None;
+        }
+        for &(name, kind, variants) in declarations {
+            // Build-time grouping already unions variants, so available symbols need no allocation.
+            if !variants
+                .iter()
+                .any(|availability| availability.contains(target))
+            {
+                result.record(kind, name, false);
+            }
+        }
+    } else {
+        if !content.contains("@since")
+            && !content.contains("@removed")
+            && !content.contains("PhpStormStubsElementAvailable")
+            && !(trust_docblocks && content.contains("PHP_INT_MIN"))
+        {
+            return None;
+        }
+        for declaration in crate::stub_availability::declarations(content, trust_docblocks) {
+            result.record(
+                declaration.kind,
+                &declaration.name,
+                declaration.availability.contains(target),
+            );
+        }
+    }
+    Some(result)
 }
 
 /// Build a lookup table mapping class/interface/trait short names to their
@@ -365,6 +400,17 @@ pub fn build_stub_constant_index() -> HashMap<&'static str, &'static str> {
 mod tests {
     use super::*;
     use crate::types::PhpVersion;
+
+    #[test]
+    fn availability_unions_case_insensitive_variants_without_namespace_collisions() {
+        let source = "<?php\nnamespace First {\n#[\\JetBrains\\PhpStorm\\Internal\\PhpStormStubsElementAvailable(to: '5.5')]\nfunction mixedCase() {}\n/** @since 5.6 */\nfunction MIXEDCASE() {}\n/** @since 8.0 */\nfunction future() {}\n}\nnamespace Second {\nfunction future() {}\n}\n";
+        for target in [PhpVersion::new(5, 5), PhpVersion::new(5, 6)] {
+            let unavailable = unavailable_stub_names(source, target, true).unwrap();
+            assert!(!unavailable.contains(StubSymbolKind::Function, "First\\mixedcase"));
+            assert!(unavailable.contains(StubSymbolKind::Function, "First\\FUTURE"));
+            assert!(!unavailable.contains(StubSymbolKind::Function, "Second\\future"));
+        }
+    }
 
     const PHP_7_1: PhpVersion = PhpVersion { major: 7, minor: 1 };
     const PHP_7_2: PhpVersion = PhpVersion { major: 7, minor: 2 };

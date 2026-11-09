@@ -519,9 +519,10 @@ pub fn scan_include_paths(
 /// phpstorm-stubs' `PhpStormStubsMap.php` is read from the map instead of
 /// being scanned.
 ///
-/// A declaration its docblock marks `@removed` at or before `php_version`
-/// is left out, as it is from the embedded stubs, so a later path's
-/// declaration of the name is the one kept.
+/// Declarations unavailable at `php_version` are left out, as in the
+/// embedded stubs, so a later path's declaration of the name is kept.
+/// Only bundled extensions in a phpstorm-stubs checkout interpret `@since`
+/// as a PHP release instead of a package version.
 pub(crate) fn scan_stub_paths(
     paths: &[PathBuf],
     filters: &std::sync::Arc<IndexFilters>,
@@ -540,17 +541,17 @@ pub(crate) fn scan_stub_paths(
                 scan_files_parallel_full(&files, None)
             }
         };
-        drop_removed_declarations(&mut scan, php_version);
+        drop_unavailable_declarations(&mut scan, php_version, is_phpstorm_stubs_checkout(path));
         result.absorb_missing(scan);
     }
     result
 }
 
-/// Remove from `scan` every declaration whose file marks it `@removed` at
-/// or before `php_version`.
-fn drop_removed_declarations(
+/// Remove declarations whose release bounds exclude `php_version`.
+fn drop_unavailable_declarations(
     scan: &mut WorkspaceScanResult,
     php_version: crate::types::PhpVersion,
+    phpstorm_stubs: bool,
 ) {
     use crate::stubs::StubSymbolKind;
 
@@ -570,12 +571,18 @@ fn drop_removed_declarations(
     }
     let files: Vec<_> = by_file.into_iter().collect();
     let removed: Vec<(StubSymbolKind, String)> = crate::parallel::map_in_blocks(
-        "drop_removed_declarations",
+        "drop_unavailable_declarations",
         &files,
         SCAN_BLOCK_FILES,
         |(path, names)| {
             let content = crate::util::read_php_source(path)?;
-            let removed = crate::stubs::removed_stub_names(&content, php_version)?;
+            let trust_docblocks = phpstorm_stubs
+                && !crate::stubs::is_unbundled_extension_stub(
+                    &crate::util::path_to_uri(path),
+                    &content,
+                );
+            let removed =
+                crate::stubs::unavailable_stub_names(&content, php_version, trust_docblocks)?;
             Some(
                 names
                     .iter()

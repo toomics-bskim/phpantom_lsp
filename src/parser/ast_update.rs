@@ -476,6 +476,8 @@ impl Backend {
             trivias: program.trivia.as_slice(),
             content,
             php_version: Some(self.php_version()),
+            php_release_docblocks: self.is_phpstorm_stubs_uri(uri)
+                && !crate::stubs::is_unbundled_extension_stub(uri, content),
             use_map: HashMap::new(),
             namespace: None,
         };

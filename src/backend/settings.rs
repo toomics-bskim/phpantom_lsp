@@ -199,14 +199,14 @@ impl Backend {
             self.refresh_stub_paths();
         }
         // Every symbol a stub file declares shares that file's `&'static str`,
-        // so each file is scanned once for its removed declarations and the
+        // so each file's availability is read once and the
         // filter below is a set lookup per symbol.
-        let mut removed_by_file: HashMap<usize, Option<stubs::RemovedStubNames<'static>>> =
+        let mut unavailable_by_file: HashMap<usize, Option<stubs::UnavailableStubNames>> =
             HashMap::new();
-        let mut is_removed = |source: &'static str, name: &str, kind: stubs::StubSymbolKind| {
-            removed_by_file
+        let mut is_unavailable = |source: &'static str, name: &str, kind: stubs::StubSymbolKind| {
+            unavailable_by_file
                 .entry(source.as_ptr() as usize)
-                .or_insert_with(|| stubs::removed_stub_names(source, version))
+                .or_insert_with(|| stubs::unavailable_stub_names(source, version, true))
                 .as_ref()
                 .is_some_and(|names| names.contains(kind, name))
         };
@@ -216,7 +216,7 @@ impl Backend {
             functions.or_insert_with(name, || source);
         }
         functions.retain(|name, source| {
-            if is_removed(source, name, stubs::StubSymbolKind::Function) {
+            if is_unavailable(source, name, stubs::StubSymbolKind::Function) {
                 filtered.functions.push((name.to_owned(), source));
                 false
             } else {
@@ -229,7 +229,7 @@ impl Backend {
             classes.or_insert_with(name, || source);
         }
         classes.retain(|name, source| {
-            if is_removed(source, name, stubs::StubSymbolKind::Class) {
+            if is_unavailable(source, name, stubs::StubSymbolKind::Class) {
                 filtered.classes.push((name.to_owned(), source));
                 false
             } else {
@@ -242,7 +242,7 @@ impl Backend {
             constants.entry(name).or_insert(source);
         }
         constants.retain(|name, source| {
-            if is_removed(source, name, stubs::StubSymbolKind::Constant) {
+            if is_unavailable(source, name, stubs::StubSymbolKind::Constant) {
                 filtered.constants.push((name, source));
                 false
             } else {

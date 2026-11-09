@@ -235,7 +235,12 @@ impl Backend {
         // Parse classes with per-class namespace tracking so that
         // multi-namespace files (e.g. PDO.php with both `namespace { }`
         // and `namespace Pdo { }`) resolve parent names correctly.
-        let (mut classes_with_ns, blocks) = Self::parse_php_classes_by_block(content, php_version);
+        let (mut classes_with_ns, blocks) = Self::parse_php_classes_by_block(
+            content,
+            php_version,
+            self.is_phpstorm_stubs_uri(uri)
+                && !crate::stubs::is_unbundled_extension_stub(uri, content),
+        );
 
         // Resolve parent names against each class's own namespace block
         // (namespace and imports), mirroring the logic in `update_ast_inner`,

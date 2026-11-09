@@ -680,6 +680,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Indexing and configuration
 
+- **Built-ins follow the selected PHP version.** Completion, hover and diagnostics now honour introduction versions as well as removals, including the PHP 5.5/5.6 boundary. Project polyfills and custom stub packages keep their own declarations.
+- **Constants declared with `\define()`.** Global constants declared through a fully qualified call now resolve like those declared with `define()`.
 - **Consistent PHP target selection.** The editor and CLI honour the same explicit override and Composer constraints, including alternative version ranges. Changing the target shows a restart notice; the current session keeps its original version until restarted.
 - **Removed built-ins stay filtered.** Removal metadata written in a single-line docblock is now honoured, and selecting an older initial target restores the built-ins available there.
 - **Editor help for `[inlay_hints]`.** The configuration schema now describes the `[inlay_hints]` section, so editors with TOML schema support complete and explain its keys like the rest of `.phpantom.toml`.

@@ -40,6 +40,24 @@ impl Backend {
         let mut method_bodies: Vec<(usize, &MethodBody<'_>)> = Vec::new();
 
         for member in members {
+            let attributes = match member {
+                ClassLikeMember::Property(mago_syntax::cst::Property::Plain(property)) => {
+                    Some(&property.attribute_lists)
+                }
+                ClassLikeMember::Property(mago_syntax::cst::Property::Hooked(property)) => {
+                    Some(&property.attribute_lists)
+                }
+                ClassLikeMember::Constant(constant) => Some(&constant.attribute_lists),
+                ClassLikeMember::EnumCase(case) => Some(&case.attribute_lists),
+                _ => None,
+            };
+            if let Some(attributes) = attributes
+                && let Some(ctx) = doc_ctx
+                && let Some(version) = ctx.php_version
+                && !crate::parser::is_available_for_version(member, attributes, ctx, version)
+            {
+                continue;
+            }
             match member {
                 ClassLikeMember::Method(method) => {
                     let Some(info) = extract_method(

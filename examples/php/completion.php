@@ -25,7 +25,12 @@ use Exception;
 // ═══════════════════════════════════════════════════════════════════════════
 
 
-// ── Auto-Import (completion) ────────────────────────────────────────────────
+// ── Global Symbol Completion and Auto-Import ────────────────────────────────
+// Try: complete `hash_eq` in the call below. It is available from PHP 5.6.
+// In a PHP 5.5 project it is absent unless a project polyfill declares it.
+// Restart PHPantom after changing [php] version in .phpantom.toml.
+hash_equals('demo', 'demo');
+
 // Try: type `new DateT` and accept `DateTime`. The `use DateTime;` statement
 // is inserted at the top of the import list above to maintain alphabetical
 // order (it sorts ahead of the `Demo\Scaffolding\...` imports).

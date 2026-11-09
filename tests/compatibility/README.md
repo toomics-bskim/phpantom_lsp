@@ -38,6 +38,21 @@ With an `8.5` target the same expression returns string `"103"`, which formattin
 must also preserve. The patched dependency sources and their provenance are
 documented in [`third_party/mago`](../../third_party/mago/README.md).
 
+## Built-in availability
+
+`cargo test --test integration builtin_availability` checks introduction and
+removal boundaries with actual embedded stubs and fresh sessions in both
+version directions. Completion, hover and diagnostics agree; installed stub
+navigation, project polyfills, custom stub precedence and CLI analysis have
+separate controls. The metadata normalizer also tests scopes, aliases, case,
+duplicate variants and CRLF.
+
+The bundled stubs omit an introduction tag for `PHP_INT_MIN`. Its PHP 7.0
+boundary is supplied by a provenance-scoped correction based on the official
+[PHP 7.0 constants migration guide](https://www.php.net/manual/en/migration70.constants.php).
+This does not establish whether an optional extension is installed, and
+package `@since` tags do not select a PHP release.
+
 ## Reference runtime checks
 
 Export fixtures while running the Rust checks, then execute them with an
@@ -92,17 +107,17 @@ build with debug info disabled, and the repository's embedded stubs:
 
 | Composer requirement | Startup (ms) | Hover p50 / p95 (ms) | Indexed stub functions / constants |
 | --- | ---: | ---: | ---: |
-| `5.5` | 61.6 | 0.40 / 0.52 | 5,253 / 8,206 |
-| `8.5` | 62.7 | 0.38 / 0.53 | 5,040 / 8,135 |
-| `5.6` | 61.0 | 0.54 / 0.70 | 5,253 / 8,200 |
-| `^8.0` or `^5.5` | 78.5 | 0.43 / 0.53 | 5,253 / 8,206 |
+| `5.5` | 32.4 | 0.40 / 0.45 | 4,906 / 7,640 |
+| `8.5` | 27.0 | 0.40 / 0.49 | 4,999 / 8,085 |
+| `5.6` | 29.3 | 0.52 / 0.56 | 4,924 / 7,640 |
+| `^8.0` or `^5.5` | 58.5 | 0.36 / 0.47 | 4,906 / 7,640 |
 
-Each case retained 15 class entries, zero function entries, and two parsed
-files in the lazy caches. These counts distinguish parsed caches from the
+The legacy cases retained six class entries and the modern case retained
+15, with zero function entries and two parsed files in each lazy cache.
+These counts distinguish parsed caches from the
 embedded symbol indexes; they are not heap-byte estimates. The snapshot
 is a smoke measurement, not a release benchmark or a comparison with an
-earlier build. Introduction-version gaps remain in the compatibility
-backlog, so the index counts are not claims of complete stub filtering.
+earlier build. Index counts alone do not establish complete PHP compatibility.
 
 ## Known gaps and extending coverage
 

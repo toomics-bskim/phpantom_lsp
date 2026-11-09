@@ -854,16 +854,33 @@ for restoration if construction selects a different target before indexing.
 This avoids a second copy of the full stub maps. Stub metadata uses the
 allocation-free numeric version parser, not the Composer constraint solver.
 
-When parsing stubs (both class stubs via `find_or_load_class` and function stubs via `find_or_load_function`), the PHP version is passed through `DocblockCtx.php_version` to the extraction functions. Four filtering points apply:
+`stub_availability` normalizes PHP release bounds for both `build.rs` and
+lazy stub extraction. The build emits `STUB_AVAILABILITY` alongside the
+embedded file array, so selecting a target filters the global indexes
+without parsing stub ASTs at startup. Installed stubs use the same
+normalizer when their indexes are built. Names retain their namespaces;
+class and function variants are grouped case-insensitively, and a symbol
+remains available if any declaration variant matches.
 
-- **Function-level:** `extract_functions_from_statements` checks the function's `#[PhpStormStubsElementAvailable]` attribute. If the version range excludes the target, the entire function is skipped. This handles duplicate function definitions (e.g. `array_combine` has separate signatures for PHP ≤7.4 and ≥8.0).
-- **Method-level:** `extract_class_like_members` applies the same check to methods. For example, `SplFixedArray::__serialize` (from PHP 8.2) is excluded when targeting PHP 8.1.
-- **Parameter-level:** `extract_parameters` filters individual parameters. For example, `array_map`'s untyped `$arrays` parameter (PHP 5.3–7.4) is excluded when targeting PHP 8.0+, leaving only the typed `array $array`.
-- **Constant-level:** `set_php_version` uses `removed_stub_names` to evict constants whose `@removed X.Y` tag indicates they were removed at or before the target version (e.g. `MCRYPT_ENCRYPT` with `@removed 7.2`).
+The parser applies the same bounds to classes, functions, members, global
+constants, and parameters before publishing them. This also prevents loading
+one available declaration from reintroducing unavailable siblings in its file.
+The `from` and `to` attribute bounds are inclusive; `@removed` is exclusive.
+A missing bound is unbounded. Deprecation, extension installation and
+`LanguageLevelTypeAware` signature selection remain separate concerns.
 
-The attribute supports named arguments (`from: '8.0'`, `to: '7.4'`) and a positional argument (`'8.1'` treated as `from`). Both bounds are inclusive. A missing bound means unbounded in that direction.
+Only bundled PHP extensions in embedded or recognized phpstorm-stubs sources
+interpret `@since` as a PHP release. Project code, other stub packages and
+separately released extensions keep their package version tags. Explicit
+PHP availability attributes and the existing `@removed` convention continue
+to apply independently. `DocblockCtx.php_release_docblocks` carries this
+provenance through extraction; a target version alone does not establish it.
+Project polyfills and external-stub precedence use the normal resolution paths.
 
-User code is never filtered. The `php_version` field in `DocblockCtx` is `None` for files parsed via `update_ast`, so the filtering logic is a no-op for non-stub code.
+`stub_availability::corrected_bounds` supplies narrowly scoped corrections
+where the pinned PHP stubs lack release metadata. It is shared by global
+index generation and lazy constant extraction, and only applies to trusted
+PHP sources. Each correction cites its PHP release documentation.
 
 ### Graceful Degradation
 

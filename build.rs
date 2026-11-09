@@ -64,6 +64,10 @@ use std::path::{Path, PathBuf};
 use flate2::read::GzDecoder;
 use tar::Archive;
 
+#[path = "src/stub_availability.rs"]
+mod stub_availability;
+#[path = "src/stub_extensions.rs"]
+mod stub_extensions;
 #[path = "src/stub_map.rs"]
 mod stub_map;
 use stub_map::parse_section;
@@ -114,6 +118,8 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=stubs.lock");
     println!("cargo:rerun-if-changed=src/stub_map.rs");
+    println!("cargo:rerun-if-changed=src/stub_availability.rs");
+    println!("cargo:rerun-if-changed=src/stub_extensions.rs");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_OFFLINE_STUBS");
     // Re-run when HEAD moves (commit, checkout, tag) so the embedded
     // version string stays current.
@@ -275,6 +281,48 @@ fn generate_stub_map(stubs_path: &Path) {
     // ── Generate Rust source ────────────────────────────────────────────
 
     let mut out = String::with_capacity(512 * 1024);
+
+    // Normalize PHP release metadata once at build time, keeping startup free of AST parses.
+    out.push_str("pub(crate) static STUB_AVAILABILITY: &[&[(&str, u8, &[crate::stub_availability::Availability])]] = &[\n");
+    for rel_path in &existing_files {
+        let content = fs::read_to_string(stubs_path.join(rel_path)).expect("read embedded stub");
+        let extension = rel_path.split('/').next().unwrap_or_default();
+        let trusted = stub_extensions::BUNDLED_EXTENSIONS
+            .iter()
+            .any(|name| name.eq_ignore_ascii_case(extension));
+        let mut entries: BTreeMap<(u8, String), Vec<stub_availability::Availability>> =
+            BTreeMap::new();
+        for declaration in stub_availability::declarations(&content, trusted) {
+            let name = if declaration.kind == 2 {
+                declaration.name
+            } else {
+                declaration.name.to_ascii_lowercase()
+            };
+            entries
+                .entry((declaration.kind, name))
+                .or_default()
+                .push(declaration.availability);
+        }
+        out.push_str("    &[\n");
+        for ((kind, name), bounds) in entries {
+            if bounds
+                .iter()
+                .any(|bounds| bounds.contains(0) && bounds.contains(u16::MAX - 1))
+            {
+                continue;
+            }
+            out.push_str(&format!("        (\"{}\", {kind}, &[", escape(&name)));
+            for bound in bounds {
+                out.push_str(&format!(
+                    "crate::stub_availability::Availability {{ from: {}, to: {}, removed: {} }},",
+                    bound.from, bound.to, bound.removed
+                ));
+            }
+            out.push_str("]),\n");
+        }
+        out.push_str("    ],\n");
+    }
+    out.push_str("];\n\n");
 
     // 1. The embedded file array.
     out.push_str("/// Embedded PHP stub file contents.\n");
@@ -636,6 +684,7 @@ fn fetch_stubs(stubs_root: &Path, lock: &StubsLock) -> Result<(), Box<dyn std::e
 fn write_empty_stubs() {
     let content = concat!(
         "pub(crate) static STUB_FILES: [&str; 0] = [];\n",
+        "pub(crate) static STUB_AVAILABILITY: &[&[(&str, u8, &[crate::stub_availability::Availability])]] = &[];\n",
         "pub(crate) static STUB_FILE_EXTENSIONS: [&str; 0] = [];\n",
         "pub(crate) static STUB_CLASS_MAP: [(&str, usize); 0] = [];\n",
         "pub(crate) static STUB_FUNCTION_MAP: [(&str, usize); 0] = [];\n",

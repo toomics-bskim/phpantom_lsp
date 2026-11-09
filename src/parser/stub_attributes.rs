@@ -81,135 +81,32 @@ impl DocblockCtx<'_> {
 
 // ─── PhpStormStubsElementAvailable Attribute Parsing ────────────────────────
 
-/// Version range extracted from a `#[PhpStormStubsElementAvailable]` attribute.
-///
-/// Both bounds are inclusive.  `None` means unbounded in that direction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct VersionAvailability {
-    /// Earliest PHP version where the element is available (inclusive).
-    pub from: Option<PhpVersion>,
-    /// Latest PHP version where the element is available (inclusive).
-    pub to: Option<PhpVersion>,
-}
-
-/// Check whether a function or method is available for the given PHP version
-/// based on its `#[PhpStormStubsElementAvailable]` attributes.
-///
-/// Returns `true` when:
-///   - The element has no `PhpStormStubsElementAvailable` attribute (always available).
-///   - The element has the attribute and the version falls within its range.
-///
-/// Returns `false` when the attribute is present and the version is outside the range.
+/// Whether a declaration exists at the target PHP release. Only trusted PHP
+/// stubs interpret `@since` tags; explicit availability attributes
+/// carry PHP versions independently of the library's own release numbering.
 pub(crate) fn is_available_for_version(
+    node: &impl HasSpan,
     attribute_lists: &Sequence<'_, attribute::AttributeList<'_>>,
     ctx: &DocblockCtx<'_>,
     php_version: PhpVersion,
 ) -> bool {
-    if let Some(avail) = extract_version_availability(attribute_lists, ctx) {
-        php_version.matches_range(avail.from, avail.to)
-    } else {
-        true
-    }
+    let docblock = crate::docblock::get_docblock_text_for_node(ctx.trivias, ctx.content, node);
+    crate::stub_availability::bounds(
+        docblock,
+        attribute_lists,
+        |name| ctx.is_element_available_attr(last_segment(name.value())),
+        ctx.php_release_docblocks,
+    )
+    .contains(u16::from(php_version.major) * 100 + u16::from(php_version.minor))
 }
 
-/// Check whether a function, method, or class has been removed in the
-/// target PHP version based on a `@removed X.Y` docblock tag.
-///
-/// Returns `true` when the element has `@removed X.Y` and the target
-/// PHP version is >= X.Y (meaning it was removed before or at the
-/// target version).
-///
-/// Returns `false` when there is no `@removed` tag or the target
-/// version is older than the removal version.
-pub(crate) fn is_removed_for_version(
-    node: &impl HasSpan,
-    ctx: &DocblockCtx<'_>,
-    php_version: PhpVersion,
-) -> bool {
-    let docblock_text = crate::docblock::get_docblock_text_for_node(ctx.trivias, ctx.content, node);
-    if let Some(text) = docblock_text
-        && let Some(removed_ver) = crate::docblock::extract_removed_version(text)
-    {
-        return php_version >= removed_ver;
-    }
-    false
-}
-
-/// Check whether a parameter is available for the given PHP version
-/// based on its `#[PhpStormStubsElementAvailable]` attributes.
-///
-/// Same logic as [`is_available_for_version`] but operates on a single
-/// parameter's attribute lists.
+/// Apply the same release bounds to parameters as to their containing declaration.
 pub(crate) fn is_param_available_for_version(
     param: &function_like::parameter::FunctionLikeParameter<'_>,
     ctx: &DocblockCtx<'_>,
     php_version: PhpVersion,
 ) -> bool {
-    if let Some(avail) = extract_version_availability(&param.attribute_lists, ctx) {
-        php_version.matches_range(avail.from, avail.to)
-    } else {
-        true
-    }
-}
-
-/// Extract the `from` / `to` version range from a
-/// `#[PhpStormStubsElementAvailable(...)]` attribute, if present.
-///
-/// Supports both named and positional argument forms:
-///   - `#[PhpStormStubsElementAvailable(from: '8.0')]`
-///   - `#[PhpStormStubsElementAvailable(from: '8.0', to: '8.4')]`
-///   - `#[PhpStormStubsElementAvailable(to: '7.4')]`
-///   - `#[PhpStormStubsElementAvailable('8.1')]` (positional → treated as `from`)
-///
-/// Attribute names are resolved through the [`DocblockCtx`] use-map so
-/// that aliases like `ElementAvailable` or `Available` (used in some
-/// stub files) are recognised.
-///
-/// Returns `None` when the attribute is not present.
-fn extract_version_availability(
-    attribute_lists: &Sequence<'_, attribute::AttributeList<'_>>,
-    ctx: &DocblockCtx<'_>,
-) -> Option<VersionAvailability> {
-    for attr_list in attribute_lists.iter() {
-        for attr in attr_list.attributes.iter() {
-            if !ctx.is_element_available_attr(last_segment(attr.name.value())) {
-                continue;
-            }
-
-            let arg_list = attr.argument_list.as_ref()?;
-            let mut from: Option<PhpVersion> = None;
-            let mut to: Option<PhpVersion> = None;
-
-            for arg in arg_list.arguments.iter() {
-                match arg {
-                    argument::PartialArgument::Named(named) => {
-                        let name = bytes_to_str(named.name.value).to_string();
-                        let value = extract_string_literal_value(named.value, ctx.content);
-                        if let Some(ver_str) = value {
-                            let ver = PhpVersion::from_metadata(&ver_str);
-                            match name.as_str() {
-                                "from" => from = ver,
-                                "to" => to = ver,
-                                _ => {}
-                            }
-                        }
-                    }
-                    argument::PartialArgument::Positional(positional) => {
-                        // Positional argument is treated as `from`.
-                        let value = extract_string_literal_value(positional.value, ctx.content);
-                        if let Some(ver_str) = value {
-                            from = PhpVersion::from_metadata(&ver_str);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-
-            return Some(VersionAvailability { from, to });
-        }
-    }
-
-    None
+    is_available_for_version(param, &param.attribute_lists, ctx, php_version)
 }
 
 // ─── LanguageLevelTypeAware Attribute Parsing ───────────────────────────────

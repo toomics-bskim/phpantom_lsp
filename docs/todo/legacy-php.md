@@ -96,8 +96,7 @@ hint; it is not evidence of support for the later primitive type.
 
 ## Delivery order
 
-Each numbered item is one implementation task and one PR. Start with
-LP5 to establish consistent built-in information. LP6–LP9 establish
+Each numbered item is one implementation task and one PR. LP6–LP9 establish
 shared version-aware parsing and call
 resolution; LP10–LP17 address the remaining semantic and inference gaps.
 LP19 covers the remaining edit producers; LP18 qualifies the final support
@@ -105,29 +104,8 @@ claim. Dependencies below are explicit;
 items can move into scheduled sprints without changing their scope.
 
 Reproduced defects should receive GitHub issues with the audit sample
-and target version attached, especially LP5 and LP9. This
+and target version attached, especially LP9. This
 document records the work; it does not imply issues have been opened.
-
-## LP5. Built-in symbols obey introduction and removal versions
-
-**Impact: High · Complexity: Medium-High**
-
-**Evidence.** Both targets resolve future symbols such as `random_int`,
-`str_contains`, `array_is_list`, `Fiber`, and `PHP_INT_MIN`. DateTime
-completion includes `createFromTimestamp`. `hash_equals` is valid in 5.6
-but also resolves in 5.5. Stub availability attributes and removal tags
-are read; introduction metadata such as `@since` is not consistently
-applied by the current symbol indexes and parser.
-
-**Plan.** Normalize trusted built-in metadata for functions, classes,
-members, constants, and parameters. Keep availability, deprecation,
-extension installation, and signature variants separate. Do not treat a
-user library's `@since` package version as a PHP version. Preserve real
-project polyfills and external-stub precedence.
-
-**Done when.** Completion, hover, navigation, diagnostics, and CLI agree on
-the same available symbols. Boundary tests include 5.5/5.6 `hash_equals`,
-removed legacy functions, and version switches in both directions.
 
 ## LP6. Legacy source forms parse with correct spans
 
@@ -275,10 +253,12 @@ and undefined bare-name behavior separately from class constants.
 for both constant kinds. Diagnose questionable undefined names while
 preserving their runtime type and version-appropriate severity; include
 modern error behavior and collisions between differently cased names.
+Include built-in names unavailable at the selected target, such as
+`PHP_INT_MIN` before PHP 7, in the undefined-name diagnostic checks.
 
 ## LP14. Built-in argument and return contracts match PHP 5
 
-**Impact: High · Complexity: Medium-High · Depends on: LP5**
+**Impact: High · Complexity: Medium-High**
 
 **Evidence.** `count_scalar` evaluates `count(42)` to `1` in both
 runtimes but receives `type_mismatch_argument`. Retaining an old function
@@ -370,7 +350,7 @@ their meaning. Record a reproducer for every additional failure found.
 
 ## LP18. Qualify and document the support contract
 
-**Impact: High · Complexity: Medium · Depends on: LP5–LP17, LP19**
+**Impact: High · Complexity: Medium · Depends on: LP6–LP17, LP19**
 
 **Plan.** Expand the regression matrix to remaining language and LSP
 surfaces before claiming full support: include/require and manual

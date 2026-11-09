@@ -60,6 +60,7 @@ impl Backend {
             trivias: doc_ctx.trivias,
             content: doc_ctx.content,
             php_version: doc_ctx.php_version,
+            php_release_docblocks: doc_ctx.php_release_docblocks,
             use_map: HashMap::new(),
             namespace: None,
         };
@@ -156,6 +157,7 @@ impl Backend {
             trivias: doc_ctx.trivias,
             content: doc_ctx.content,
             php_version: doc_ctx.php_version,
+            php_release_docblocks: doc_ctx.php_release_docblocks,
             use_map: HashMap::new(),
             namespace: block_ns.clone(),
         };
@@ -236,6 +238,7 @@ impl Backend {
                 trivias: doc_ctx.trivias,
                 content: doc_ctx.content,
                 php_version: doc_ctx.php_version,
+                php_release_docblocks: doc_ctx.php_release_docblocks,
                 use_map: use_map.clone(),
                 namespace: namespace.clone(),
             };
@@ -332,6 +335,7 @@ namespace App {
                 trivias: program.trivia.as_slice(),
                 content,
                 php_version: None,
+                php_release_docblocks: false,
                 use_map: HashMap::new(),
                 namespace: None,
             };

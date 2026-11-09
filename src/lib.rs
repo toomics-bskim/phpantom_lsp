@@ -333,6 +333,8 @@ mod semantic_tokens;
 mod server;
 mod signature_help;
 mod signature_render;
+mod stub_availability;
+mod stub_extensions;
 pub mod stub_map;
 pub mod stub_patches;
 pub mod stubs;

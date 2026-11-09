@@ -32,6 +32,8 @@ final class RequireExtendsConsumer extends Scaffolding\RequireExtendsTestCase
 
 function runDemoAssertions(): void
 {
+    assert(hash_equals('demo', 'demo') === true);
+    assert(hash_equals('demo', 'different') === false);
     $legacyGeneration = new LegacyGenerationDemo();
     assert(is_string($legacyGeneration->name));
     assert(is_int(LegacyGenerationDemo::$count));

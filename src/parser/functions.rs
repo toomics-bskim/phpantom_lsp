@@ -16,7 +16,7 @@ use crate::types::*;
 
 use super::signature::{Signature, extract_signature};
 use super::{
-    DocblockCtx, declares_parameter, for_each_nested_statement_list, is_removed_for_version,
+    DocblockCtx, declares_parameter, for_each_nested_statement_list, is_available_for_version,
     merge_deprecation_info,
 };
 
@@ -393,8 +393,8 @@ impl Backend {
     /// declares is exactly the string it was given, wherever the call
     /// sits.
     ///
-    /// With a target PHP version in `doc_ctx`, a declaration whose
-    /// docblock marks it `@removed` at or before that version is skipped.
+    /// With a target PHP version in `doc_ctx`, declarations outside their
+    /// release bounds are skipped, including trusted PHP introduction tags.
     ///
     /// Uses the parsed AST rather than regex, so it piggybacks on the
     /// parse pass that `update_ast` already performs.
@@ -409,12 +409,19 @@ impl Backend {
             match statement {
                 Statement::Expression(_) | Statement::Constant(_)
                     if doc_ctx.is_some_and(|ctx| {
-                        ctx.php_version
-                            .is_some_and(|ver| is_removed_for_version(statement, ctx, ver))
+                        ctx.php_version.is_some_and(|ver| {
+                            let empty = Sequence::empty();
+                            let attributes = match statement {
+                                Statement::Constant(constant) => &constant.attribute_lists,
+                                _ => &empty,
+                            };
+                            !is_available_for_version(statement, attributes, ctx, ver)
+                        })
                     }) => {}
                 Statement::Expression(expr_stmt) => {
                     if let Some(entry) =
                         Self::try_extract_define_info(expr_stmt.expression, content)
+                        && constant_available(&entry.0, doc_ctx)
                     {
                         defines.push(entry);
                     }
@@ -430,7 +437,9 @@ impl Backend {
                             Some(ns) => format!("{ns}\\{name}"),
                             None => name.to_string(),
                         };
-                        defines.push((fqn, item.name.span.start.offset, value));
+                        if constant_available(&fqn, doc_ctx) {
+                            defines.push((fqn, item.name.span.start.offset, value));
+                        }
                     }
                 }
                 Statement::Namespace(ns_stmt) => {
@@ -509,7 +518,12 @@ impl Backend {
                 Expression::Identifier(ident) => ident,
                 _ => return None,
             };
-            if !ident.value().eq_ignore_ascii_case(b"define") {
+            if !ident
+                .value()
+                .strip_prefix(b"\\")
+                .unwrap_or(ident.value())
+                .eq_ignore_ascii_case(b"define")
+            {
                 return None;
             }
             let args: Vec<_> = func_call.argument_list.arguments.iter().collect();
@@ -540,4 +554,15 @@ impl Backend {
         }
         None
     }
+}
+
+fn constant_available(name: &str, doc_ctx: Option<&DocblockCtx<'_>>) -> bool {
+    let Some(ctx) = doc_ctx.filter(|ctx| ctx.php_release_docblocks) else {
+        return true;
+    };
+    let Some(version) = ctx.php_version else {
+        return true;
+    };
+    crate::stub_availability::corrected_bounds(2, name, Default::default())
+        .contains(u16::from(version.major) * 100 + u16::from(version.minor))
 }
