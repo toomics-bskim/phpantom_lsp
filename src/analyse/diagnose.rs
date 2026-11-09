@@ -107,6 +107,7 @@ pub(super) fn collect_diagnostics(pass: DiagnosticPass<'_>) -> Vec<(String, Vec<
                         // collector's own `with_parse_cache` call becomes
                         // a no-op (nested guard).
                         let _project_guard = backend.enter_project_scope(uri);
+                        let _version = crate::parser::SourceVersionGuard::new(backend.source_php_version(uri));
                         let _parse_guard = with_parse_cache(content);
                         let _cache_guard =
                             with_active_resolved_class_cache(&backend.resolved_class_cache);

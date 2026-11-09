@@ -60,6 +60,8 @@ pub(crate) use ast_update::AstIndexParseResult;
 pub(crate) use functions::scope_body_reads_func_args;
 pub(crate) use params::*;
 pub(crate) use parse_cache::*;
+mod source_version;
+pub(crate) use source_version::*;
 pub(crate) use stub_attributes::*;
 
 use crate::atom::{atom, bytes_to_str};
@@ -106,6 +108,7 @@ impl Backend {
     /// Parse PHP source text and extract class information.
     /// Returns a Vec of ClassInfo for all classes found in the file.
     pub fn parse_php(&self, content: &str) -> Vec<ClassInfo> {
+        let _version = SourceVersionGuard::new(self.source_php_version(""));
         Self::parse_php_versioned(content, None)
     }
 
@@ -114,6 +117,7 @@ impl Backend {
     /// classes are.  For re-parsing patched content whose classes the type
     /// engine reads in place of the file's own.
     pub(crate) fn parse_php_resolved(&self, content: &str) -> Vec<ClassInfo> {
+        let _version = SourceVersionGuard::new(self.source_php_version(""));
         let _parse_guard = with_parse_cache(content);
         let use_map = self.parse_use_statements(content);
         let constant_imports = self.parse_symbol_imports(content).constants;
@@ -159,6 +163,7 @@ impl Backend {
         content: &str,
         php_version: Option<PhpVersion>,
     ) -> Vec<(ClassInfo, Option<String>)> {
+        let _version = php_version.map(|_| SourceVersionGuard::new(Default::default()));
         Self::parse_php_classes_by_block(
             content,
             php_version,
@@ -341,6 +346,11 @@ impl Backend {
         content: &str,
         php_version: Option<PhpVersion>,
     ) -> Vec<FunctionInfo> {
+        let _version = SourceVersionGuard::new(if php_version.is_some() {
+            Default::default()
+        } else {
+            self.source_php_version("")
+        });
         let php_release_docblocks =
             crate::stubs::embedded_release_docblocks(content).unwrap_or(true);
         with_parsed_program(content, "parse_functions", |program, content| {

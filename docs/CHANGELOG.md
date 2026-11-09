@@ -681,6 +681,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 #### Indexing and configuration
 
 - **Built-ins follow the selected PHP version.** Completion, hover and diagnostics now honour introduction versions as well as removals, including the PHP 5.5/5.6 boundary. Project polyfills and custom stub packages keep their own declarations.
+- **Legacy PHP source works in the editor.** PHP 5 projects now understand older offset syntax, identifiers, comments and PHP tags while keeping navigation and completion at the correct source positions. ASP tags are analysed as enabled for PHP 5 targets.
 - **Constants declared with `\define()`.** Global constants declared through a fully qualified call now resolve like those declared with `define()`.
 - **Consistent PHP target selection.** The editor and CLI honour the same explicit override and Composer constraints, including alternative version ranges. Changing the target shows a restart notice; the current session keeps its original version until restarted.
 - **Removed built-ins stay filtered.** Removal metadata written in a single-line docblock is now honoured, and selecting an older initial target restores the built-ins available there.

@@ -70,21 +70,23 @@ fn skip_balanced_parens_back(chars: &[char], pos: usize) -> Option<usize> {
     None
 }
 
-/// Skip backwards past a balanced bracket group `[…]` in a char slice.
+/// Skip backwards past a balanced offset group (`[…]`, or legacy `{…}`).
 ///
-/// `pos` must point one past the closing `]`.  Returns the index of the
-/// opening `[`, or `None` if brackets are unbalanced.
+/// `pos` points past the closing delimiter. Returns its matching opener,
+/// or `None` if the group is unbalanced.
 fn skip_balanced_brackets_back(chars: &[char], pos: usize) -> Option<usize> {
-    if pos == 0 || chars[pos - 1] != ']' {
+    if pos == 0 || !is_offset_closer(chars[pos - 1]) {
         return None;
     }
+    let close = chars[pos - 1];
+    let open = if close == '}' { '{' } else { '[' };
     let mut depth: u32 = 0;
     let mut j = pos;
     while j > 0 {
         j -= 1;
         match chars[j] {
-            ']' => depth += 1,
-            '[' => {
+            c if c == close => depth += 1,
+            c if c == open => {
                 depth -= 1;
                 if depth == 0 {
                     return Some(j);
@@ -94,6 +96,10 @@ fn skip_balanced_brackets_back(chars: &[char], pos: usize) -> Option<usize> {
         }
     }
     None
+}
+
+fn is_offset_closer(c: char) -> bool {
+    c == ']' || (c == '}' && crate::parser::source_version() < mago_php_version::PHPVersion::PHP80)
 }
 
 /// Check if the `new` keyword (followed by whitespace) appears immediately
@@ -317,7 +323,7 @@ fn extract_arrow_subject(chars: &[char], arrow_pos: usize) -> String {
     // Walk backward through one or more balanced `[…]` pairs, collecting
     // each bracket segment.  The segments are stored innermost-first and
     // reversed at the end so the final subject reads left-to-right.
-    if i > 0 && chars[i - 1] == ']' {
+    if i > 0 && is_offset_closer(chars[i - 1]) {
         let mut segments: Vec<String> = Vec::new();
         // Track the raw bracket ranges so we can reconstruct the
         // array literal base when there is no `$var` prefix.
@@ -325,7 +331,7 @@ fn extract_arrow_subject(chars: &[char], arrow_pos: usize) -> String {
         let mut pos = i;
 
         while pos > 0
-            && chars[pos - 1] == ']'
+            && is_offset_closer(chars[pos - 1])
             && let Some(bracket_open) = skip_balanced_brackets_back(chars, pos)
         {
             let inner: String = chars[bracket_open + 1..pos - 1].iter().collect();

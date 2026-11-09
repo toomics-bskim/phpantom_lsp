@@ -179,6 +179,7 @@ impl Backend {
     /// the next time a lookup needs them. A no-op when there were no stub
     /// paths and still are none, which is the default.
     pub(crate) fn refresh_stub_paths(&self) {
+        let _version = crate::parser::SourceVersionGuard::new(Default::default());
         let roots = self.stub_paths();
         let previous = self.external_stubs();
         if roots.is_empty() && previous.is_empty() {

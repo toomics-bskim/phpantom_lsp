@@ -22,23 +22,31 @@ are preserved in [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE)
 ## Local changes
 
 - `syntax/src/settings.rs` and `syntax/src/parser/mod.rs`: carry the source
-  PHP version in the parser, defaulting to the upstream modern version.
+  PHP version through the parser and lexer, defaulting to the upstream modern version.
+- `syntax/src/lexer/mod.rs`: respect keyword and attribute introduction
+  versions, and read ASP/script tags on PHP 5 targets. Short tags retain
+  their existing setting; ASP tags are assumed enabled for PHP 5 analysis.
 - `syntax/src/token/mod.rs`: map concatenation precedence to addition and
   subtraction precedence before PHP 8.
 - `syntax/src/parser/internal/expression.rs`: use that mapping when binding
-  infix operators and parsing concatenation's right operand.
+  infix operators and parsing concatenation's right operand; represent
+  pre-PHP-8 curly offsets as array access with original delimiter spans.
 - `formatter/src/lib.rs`: use the formatter's target for parsing, including
   when callers supply custom parser settings. Range formatting shares it.
 - `formatter/src/internal/parens.rs`: use the same precedence when deciding
   whether parentheses are needed.
 
 The change follows the [PHP concatenation precedence RFC](https://wiki.php.net/rfc/concatenation_precedence).
-It does not yet make other source parsing or type inference version-aware.
+Legacy lexical rules follow the [PHP 5.6 scanner](https://github.com/php/php-src/blob/PHP-5.6/Zend/zend_language_scanner.l),
+the [PHP 7 migration guide](https://www.php.net/manual/en/migration70.incompatible.php),
+and the [PHP 8 migration guide](https://www.php.net/manual/en/migration80.incompatible.php).
+These are behavior references; no PHP source was copied. Unsupported-feature
+diagnostics and older runtime semantics remain separate work.
 There is no extra parsing pass or post-format text replacement.
 
 Regression coverage lives in `tests/legacy_compatibility.rs` and
 `tests/compatibility/formatting.json`; see the
 [runtime check instructions](../../tests/compatibility/README.md).
-When upgrading Mago, compare these six files with the new upstream source,
+When upgrading Mago, compare these files with the new upstream source,
 retain the patch until upstream provides equivalent behavior, and run the
 formatting and reference-runtime checks before removing the overrides.

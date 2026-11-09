@@ -96,7 +96,7 @@ hint; it is not evidence of support for the later primitive type.
 
 ## Delivery order
 
-Each numbered item is one implementation task and one PR. LP6–LP9 establish
+Each numbered item is one implementation task and one PR. LP7–LP9 establish
 shared version-aware parsing and call
 resolution; LP10–LP17 address the remaining semantic and inference gaps.
 LP19 covers the remaining edit producers; LP18 qualifies the final support
@@ -107,30 +107,9 @@ Reproduced defects should receive GitHub issues with the audit sample
 and target version attached, especially LP9. This
 document records the work; it does not imply issues have been opened.
 
-## LP6. Legacy source forms parse with correct spans
-
-**Impact: High · Complexity: High**
-
-**Evidence.** `curly_offset`, `reserved_match_name`, and
-`hash_bracket_comment` are accepted by both reference linters but receive
-syntax errors. `asp_tag` is treated as non-code. `parser/recovery.rs`
-still uses modern default parser settings instead of the project's
-source version. Propagate the effective target through that shared path.
-
-**Plan.** Establish version-aware source lexing/parsing for these forms,
-including an explicit policy for optional short/ASP tags and script tags.
-Keep byte offsets and UTF-16 positions valid through recovery, indexing,
-and navigation. Prefer an upstream parser change or a well-scoped adapter
-over parallel parsing/type-resolution pipelines.
-
-**Done when.** The failing sources resolve types and navigate normally,
-including mixed PHP/HTML, incomplete edits, CRLF, and non-ASCII text.
-Modern keywords and attributes continue to parse on modern targets.
-Stub files retain the syntax needed to describe older APIs.
-
 ## LP7. Report syntax unavailable at the selected version
 
-**Impact: High · Complexity: Medium-High · Depends on: LP6**
+**Impact: High · Complexity: Medium-High**
 
 **Evidence.** The invalid-source counts above include PHP 5.6 features on
 5.5 and later syntax on both targets. No target-version diagnostic is
@@ -148,7 +127,7 @@ mistaken for syntax executed by a PHP 5 project.
 
 ## LP8. Native type hints retain PHP 5 class-name meaning
 
-**Impact: High · Complexity: High · Depends on: LP6**
+**Impact: High · Complexity: High**
 
 **Evidence.** `scalar_type_mismatch` declares `function f(int $x)` and
 passes integer `1`. Both reference runtimes reject the argument because
@@ -205,7 +184,7 @@ weakening unrelated diagnostics.
 
 ## LP11. Resolve legacy dynamic variable binding
 
-**Impact: Medium-High · Complexity: High · Depends on: LP6**
+**Impact: Medium-High · Complexity: High**
 
 **Evidence.** `indirect_variable` evaluates `$$names['key']` to an
 `AuditIndirect` object, but hover is `mixed` and member completion is
@@ -350,7 +329,7 @@ their meaning. Record a reproducer for every additional failure found.
 
 ## LP18. Qualify and document the support contract
 
-**Impact: High · Complexity: Medium · Depends on: LP6–LP17, LP19**
+**Impact: High · Complexity: Medium · Depends on: LP7–LP17, LP19**
 
 **Plan.** Expand the regression matrix to remaining language and LSP
 surfaces before claiming full support: include/require and manual

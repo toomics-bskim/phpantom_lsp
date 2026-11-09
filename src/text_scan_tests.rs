@@ -7,6 +7,21 @@ use super::{
     top_level_commas, unquote_php_string,
 };
 
+#[test]
+fn legacy_hash_bracket_comments_before_namespaces() {
+    for version in [(5, 5), (5, 6), (7, 4)] {
+        let _version = crate::parser::SourceVersionGuard::new(mago_php_version::PHPVersion::new(
+            version.0, version.1, 0,
+        ));
+        assert_eq!(super::skip_php_comment(b"#[comment\n", 0), Some(9));
+        assert_eq!(
+            ns_at_marker("<?php\r\n#[not an attribute\r\nnamespace Legacy;\r\nclass Match { | }"),
+            Some("Legacy".into())
+        );
+    }
+    assert_eq!(super::skip_php_comment(b"#[Attribute]", 0), None);
+}
+
 /// Return the namespace in force where `|` sits in `src` (the marker is
 /// stripped before scanning).
 ///

@@ -162,6 +162,7 @@ impl Backend {
         // Re-add current symbols for created/changed files.  Deleted files
         // keep their entries purged.
         for (uri_str, path, change_type) in changes {
+            let _version = crate::parser::SourceVersionGuard::new(self.source_php_version(uri_str));
             if !matches!(
                 *change_type,
                 FileChangeType::Created | FileChangeType::Changed

@@ -16,14 +16,19 @@ use mago_allocator::LocalArena;
 use mago_database::file::FileId;
 use mago_syntax::cst::Program;
 use mago_syntax::error::ParseError;
-use mago_syntax::parser::{parse_file_content, parse_file_content_with_settings};
+use mago_syntax::parser::parse_file_content_with_settings;
 use mago_syntax::settings::ParserSettings;
 
 /// Parse `content`, keeping the code the parser would drop (see
 /// [`reparse_dropped_code`]).
 pub(crate) fn parse_program<'a>(arena: &'a LocalArena, content: &'a str) -> &'a Program<'a> {
     let file_id = FileId::new(b"input.php");
-    let program = parse_file_content(arena, file_id, content.as_bytes());
+    let program = parse_file_content_with_settings(
+        arena,
+        file_id,
+        content.as_bytes(),
+        super::source_settings(),
+    );
     reparse_dropped_code(arena, program, content).unwrap_or(program)
 }
 
@@ -68,7 +73,7 @@ pub(super) fn parse_keeping_end<'a>(
 ) -> Option<&'a Program<'a>> {
     let settings = ParserSettings {
         recover_incomplete: true,
-        ..ParserSettings::default()
+        ..super::source_settings()
     };
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         parse_file_content_with_settings(arena, file_id, content.as_bytes(), settings)

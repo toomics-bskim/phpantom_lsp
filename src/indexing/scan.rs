@@ -238,6 +238,7 @@ impl Backend {
         pkg: &composer::ComposerPackage,
         subproject: bool,
     ) {
+        let _version = crate::parser::SourceVersionGuard::new(self.source_php_version(""));
         // `vendor/` may not have existed during initialization (a fresh
         // clone before `composer install`), so registering it again here
         // is what lets the shared vendor filters cache both raw and
@@ -434,6 +435,7 @@ impl Backend {
         vendor_dir: &str,
         progress: Option<&crate::progress::ScanProgress>,
     ) -> usize {
+        let _version = crate::parser::SourceVersionGuard::new(self.source_php_version(""));
         let autoload_files = composer::parse_autoload_files(project_root, vendor_dir);
         let autoload_count = autoload_files.len();
 
@@ -561,6 +563,7 @@ impl Backend {
         skip_paths: &HashSet<PathBuf>,
         progress: Option<&crate::progress::ScanProgress>,
     ) -> WorkspaceScanResult {
+        let _version = crate::parser::SourceVersionGuard::new(self.source_php_version(""));
         // Use the pre-parsed package when available; only read from disk
         // as a fallback (e.g. monorepo subproject calls).
         let owned_package;

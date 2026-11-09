@@ -70,11 +70,13 @@ impl Backend {
         // the byte scan is spread over the cores.  The classes come back in
         // manifest order, so the first entry to declare a name wins it, the
         // same as in a sequential scan.
+        let version = self.source_php_version("");
         let scanned: Vec<Vec<PharClass>> = crate::parallel::map_in_blocks(
             "phar-scan",
             &php_files,
             PHAR_SCAN_BLOCK_FILES,
             |internal_path| {
+                let _version = crate::parser::SourceVersionGuard::new(version);
                 let content = data.get(archive.file_range(internal_path)?)?;
                 let classes: Vec<PharClass> = classmap_scanner::find_classes(content)
                     .into_iter()

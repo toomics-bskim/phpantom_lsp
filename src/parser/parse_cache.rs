@@ -52,6 +52,8 @@ const MAX_CACHED_OTHER_FILES: usize = 4;
 /// [`parse_program`](super::recovery::parse_program)), so a parse of it is
 /// worth keeping.
 pub(crate) struct ParsedFile {
+    /// Grammar used by this parse, independent of stub availability filtering.
+    pub(crate) source_version: mago_php_version::PHPVersion,
     content: Arc<String>,
     /// Owns the nodes `program` points at; never read directly.
     _arena: mago_allocator::LocalArena,
@@ -81,6 +83,7 @@ impl ParsedFile {
         // and do not move when the arena and the `Arc` do, so the pointer
         // outlives these moves.
         Self {
+            source_version: super::source_version(),
             content,
             _arena: arena,
             program,
@@ -100,6 +103,7 @@ impl ParsedFile {
 
 /// One file's content and, once something has asked for it, its AST.
 struct CachedFile {
+    source_version: mago_php_version::PHPVersion,
     content: Arc<String>,
     /// The parse of `content`.  Unset until the first parse of this file.
     parsed: std::cell::OnceCell<Arc<ParsedFile>>,
@@ -127,6 +131,7 @@ struct CachedFile {
 impl CachedFile {
     fn new(content: Arc<String>) -> Rc<Self> {
         Rc::new(Self {
+            source_version: super::source_version(),
             content,
             parsed: std::cell::OnceCell::new(),
             namespaces: std::cell::OnceCell::new(),
@@ -138,6 +143,9 @@ impl CachedFile {
     }
 
     fn holds(&self, content: &str) -> bool {
+        if self.source_version != super::source_version() {
+            return false;
+        }
         // The pointer comparison includes the length, so a prefix of the
         // cached text, which starts at the same address, is not mistaken
         // for the whole of it.
@@ -215,6 +223,7 @@ fn cached_file(content: &str) -> Option<Rc<CachedFile>> {
 /// `std::mem::forget`) — doing so would leave the cache active past the
 /// pass it belongs to.
 pub(crate) struct ParseCacheGuard<'a> {
+    _version: Option<super::SourceVersionGuard>,
     /// `true` when this guard owns the cache and must clear it on drop.
     /// Nested guards have `owns_cache = false` and leave it untouched.
     owns_cache: bool,
@@ -334,6 +343,7 @@ fn install_parse_cache<'a>(
             }
         };
         let guard = ParseCacheGuard {
+            _version: None,
             owns_cache,
             alias: None,
             _aliased_text: None,
@@ -341,6 +351,17 @@ fn install_parse_cache<'a>(
         };
         (guard, file)
     })
+}
+
+/// Select grammar for this cache scope; nested stub scopes restore the caller.
+pub(crate) fn with_parse_version<'a>(
+    version: mago_php_version::PHPVersion,
+    create: impl FnOnce() -> ParseCacheGuard<'a>,
+) -> ParseCacheGuard<'a> {
+    let version = super::SourceVersionGuard::new(version);
+    let mut guard = create();
+    guard._version = Some(version);
+    guard
 }
 
 /// Parse `content` with the mago-syntax parser and pass the resulting
@@ -596,6 +617,29 @@ mod with_parsed_program_tests {
     //! poisoned cache entry must be evicted so the next call re-parses.
 
     use super::{with_parse_cache, with_parsed_program};
+
+    #[test]
+    fn source_grammar_is_part_of_cache_identity_and_restored_after_stubs() {
+        use crate::parser::SourceVersionGuard;
+        use mago_php_version::PHPVersion;
+        let text = "<?php #[ordinary comment\nclass Match {}";
+        let _legacy = SourceVersionGuard::new(PHPVersion::new(5, 5, 0));
+        let _cache = with_parse_cache(text);
+        let errors = || with_parsed_program(text, "grammar", |p, _| p.errors.len());
+        assert_eq!(errors(), 0);
+        {
+            let _modern = SourceVersionGuard::new(PHPVersion::PHP85);
+            let _nested = with_parse_cache(text);
+            assert!(errors() > 0);
+        }
+        assert_eq!(errors(), 0);
+        let unwind = std::panic::catch_unwind(|| {
+            let _modern = SourceVersionGuard::new(PHPVersion::PHP85);
+            panic!("restore source grammar");
+        });
+        assert!(unwind.is_err());
+        assert_eq!(errors(), 0);
+    }
 
     #[test]
     fn fast_path_lazy_parse_recovers_from_panic() {

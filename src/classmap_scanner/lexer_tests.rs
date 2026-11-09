@@ -522,3 +522,12 @@ function after() {}
     let result = find_symbols(content);
     assert_eq!(result.functions, vec!["outer", "after"]);
 }
+#[test]
+fn legacy_hash_bracket_comments_do_not_declare_symbols() {
+    let _version =
+        crate::parser::SourceVersionGuard::new(mago_php_version::PHPVersion::new(5, 5, 0));
+    let text = b"<?php namespace Legacy;\r\n#[ isn't an attribute: ' class Phantom {} function fake() {}\r\nclass Match {} function real() {}\r\n";
+    let symbols = super::find_symbols(text);
+    assert_eq!(symbols.classes, vec!["Legacy\\Match"]);
+    assert_eq!(symbols.functions, vec!["Legacy\\real"]);
+}

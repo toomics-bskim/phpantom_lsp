@@ -68,7 +68,7 @@ use crate::token::TokenKind;
 mod internal;
 
 /// The `Lexer` struct is responsible for tokenizing input source code into discrete tokens
-/// based on PHP language syntax. It is designed to work with PHP code from version 7.0 up to 8.4.
+/// based on PHP language syntax, with version-sensitive rules selected by `LexerSettings`.
 ///
 /// The lexer reads through the provided input and processes it accordingly.
 ///
@@ -227,6 +227,34 @@ impl<'input> Lexer<'input> {
 
                 // Get the remaining bytes to scan.
                 let bytes = self.input.read_remaining();
+
+                if self.settings.php_version < mago_php_version::PHPVersion::PHP70 {
+                    let opening = memchr::memchr_iter(b'<', bytes).find_map(|pos| {
+                        legacy_open_tag(&bytes[pos..], self.settings.enable_short_tags)
+                            .map(|(kind, len)| (pos, kind, len))
+                    });
+                    if let Some((pos, kind, len)) = opening {
+                        if pos > 0 {
+                            let buffer = self.input.consume(pos);
+                            return Some(Ok(self.token(
+                                TokenKind::InlineText,
+                                buffer,
+                                start,
+                                self.input.current_position(),
+                            )));
+                        }
+                        let buffer = self.input.consume(len);
+                        self.mode = LexerMode::Script;
+                        return Some(Ok(self.token(kind, buffer, start, self.input.current_position())));
+                    }
+                    let buffer = self.input.consume_remaining();
+                    return Some(Ok(self.token(
+                        TokenKind::InlineText,
+                        buffer,
+                        start,
+                        self.input.current_position(),
+                    )));
+                }
 
                 if self.settings.enable_short_tags {
                     if let Some(pos) = memchr::memmem::find(bytes, b"<?") {
@@ -437,6 +465,18 @@ impl<'input> Lexer<'input> {
                     [b'.', b'=', ..] => (TokenKind::DotEqual, 2),
                     [b'?', b'?', ..] => (TokenKind::QuestionQuestion, 2),
                     [b'?', b'>', ..] => (TokenKind::CloseTag, 2),
+                    [b'%', b'>', ..] if self.settings.php_version < mago_php_version::PHPVersion::PHP70 => {
+                        (TokenKind::CloseTag, 2)
+                    }
+                    [b'<', b'/', ..]
+                        if self.settings.php_version < mago_php_version::PHPVersion::PHP70
+                            && legacy_script_close(self.input.read_remaining()).is_some() =>
+                    {
+                        (
+                            TokenKind::CloseTag,
+                            legacy_script_close(self.input.read_remaining()).unwrap(),
+                        )
+                    }
                     [b'=', b'>', ..] => (TokenKind::EqualGreaterThan, 2),
                     [b'=', b'=', ..] => (TokenKind::EqualEqual, 2),
                     [b'+', b'+', ..] => (TokenKind::PlusPlus, 2),
@@ -451,7 +491,9 @@ impl<'input> Lexer<'input> {
                     [b'>', b'>', ..] => (TokenKind::RightShift, 2),
                     [b'>', b'=', ..] => (TokenKind::GreaterThanEqual, 2),
                     [b':', b':', ..] => (TokenKind::ColonColon, 2),
-                    [b'#', b'[', ..] => (TokenKind::HashLeftBracket, 2),
+                    [b'#', b'[', ..] if self.settings.php_version >= mago_php_version::PHPVersion::PHP80 => {
+                        (TokenKind::HashLeftBracket, 2)
+                    }
                     [b'|', b'=', ..] => (TokenKind::PipeEqual, 2),
                     [b'|', b'|', ..] => (TokenKind::PipePipe, 2),
                     [b'/', b'=', ..] => (TokenKind::SlashEqual, 2),
@@ -461,7 +503,7 @@ impl<'input> Lexer<'input> {
                     [b'|', b'>', ..] => (TokenKind::PipeGreaterThan, 2),
                     [b'/', b'/', ..] => {
                         let remaining = self.input.peek(2, self.input.len() - self.input.current_offset());
-                        let comment_len = scan_single_line_comment(remaining);
+                        let comment_len = self.scan_line_comment(remaining);
                         (TokenKind::SingleLineComment, 2 + comment_len)
                     }
                     [b'/', b'*', asterisk] => {
@@ -583,7 +625,7 @@ impl<'input> Lexer<'input> {
                     }
                     [b'#', ..] => {
                         let remaining = self.input.peek(1, self.input.len() - self.input.current_offset());
-                        let comment_len = scan_single_line_comment(remaining);
+                        let comment_len = self.scan_line_comment(remaining);
                         (TokenKind::HashComment, 1 + comment_len)
                     }
                     [b'\\', ..] => (TokenKind::NamespaceSeparator, 1),
@@ -1139,6 +1181,15 @@ impl<'input> Lexer<'input> {
 
         if !ended_with_slash {
             if let Some(kind) = internal::keyword::lookup_keyword(self.input.read(length)) {
+                let introduced = match kind {
+                    TokenKind::Fn => Some(mago_php_version::PHPVersion::PHP74),
+                    TokenKind::Match => Some(mago_php_version::PHPVersion::PHP80),
+                    TokenKind::Enum | TokenKind::Readonly => Some(mago_php_version::PHPVersion::PHP81),
+                    _ => None,
+                };
+                if introduced.is_some_and(|version| self.settings.php_version < version) {
+                    return (TokenKind::Identifier, length);
+                }
                 return (kind, length);
             }
 
@@ -1146,6 +1197,16 @@ impl<'input> Lexer<'input> {
         }
 
         self.scan_qualified_identifier_info(length)
+    }
+
+    fn scan_line_comment(&self, bytes: &[u8]) -> usize {
+        let end = scan_single_line_comment(bytes);
+        if self.settings.php_version < mago_php_version::PHPVersion::PHP70 {
+            // ASP closing tags terminate line comments too; script closing tags do not.
+            memmem::find(&bytes[..end], b"%>").unwrap_or(end)
+        } else {
+            end
+        }
     }
 
     // Keep qualified-name scanning out of the common identifier/keyword path.
@@ -1911,6 +1972,69 @@ fn read_until_end_of_brace_interpolation(input: &Input, from: usize) -> u32 {
 fn scan_multi_line_comment(bytes: &[u8]) -> Option<usize> {
     // Use SIMD to find */ quickly
     memmem::find(bytes, b"*/").map(|pos| pos + 2)
+}
+
+// PHP 5's optional ASP tags are enabled for source analysis, just like short tags.
+// Match the script-tag grammar without allocating or changing source offsets.
+fn legacy_open_tag(bytes: &[u8], short_tags: bool) -> Option<(TokenKind, usize)> {
+    if bytes.starts_with(b"<?=") || bytes.starts_with(b"<%=") {
+        return Some((TokenKind::EchoTag, 3));
+    }
+    if bytes.get(..5).is_some_and(|s| s.eq_ignore_ascii_case(b"<?php"))
+        && bytes.get(5).is_some_and(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
+    {
+        return Some((TokenKind::OpenTag, 5));
+    }
+    if bytes.starts_with(b"<%") {
+        return Some((TokenKind::OpenTag, 2));
+    }
+    if short_tags && bytes.starts_with(b"<?") {
+        return Some((TokenKind::ShortOpenTag, 2));
+    }
+    if !bytes.get(..7)?.eq_ignore_ascii_case(b"<script") {
+        return None;
+    }
+    let mut pos = skip_tag_space(bytes, 7);
+    if pos == 7 || !bytes.get(pos..pos + 8)?.eq_ignore_ascii_case(b"language") {
+        return None;
+    }
+    pos = skip_tag_space(bytes, pos + 8);
+    if bytes.get(pos) != Some(&b'=') {
+        return None;
+    }
+    pos = skip_tag_space(bytes, pos + 1);
+    let quote = bytes.get(pos).copied().filter(|b| matches!(b, b'\'' | b'"'));
+    pos += usize::from(quote.is_some());
+    if !bytes.get(pos..pos + 3)?.eq_ignore_ascii_case(b"php") {
+        return None;
+    }
+    pos += 3;
+    if let Some(quote) = quote {
+        if bytes.get(pos) != Some(&quote) {
+            return None;
+        }
+        pos += 1;
+    }
+    pos = skip_tag_space(bytes, pos);
+    (bytes.get(pos) == Some(&b'>')).then_some((TokenKind::OpenTag, pos + 1))
+}
+
+fn legacy_script_close(bytes: &[u8]) -> Option<usize> {
+    if !bytes.get(..8)?.eq_ignore_ascii_case(b"</script") {
+        return None;
+    }
+    let pos = skip_tag_space(bytes, 8);
+    (bytes.get(pos) == Some(&b'>')).then_some(pos + 1)
+}
+
+fn skip_tag_space(bytes: &[u8], mut pos: usize) -> usize {
+    while bytes
+        .get(pos)
+        .is_some_and(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n'))
+    {
+        pos += 1;
+    }
+    pos
 }
 
 /// Scan a single-line comment using SIMD-accelerated search.

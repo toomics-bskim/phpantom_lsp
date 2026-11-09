@@ -1,10 +1,12 @@
 /// Settings for the lexer.
 #[derive(Debug, Clone, Copy)]
 pub struct LexerSettings {
+    /// Source version for keywords, attributes, and legacy PHP tags.
+    pub php_version: mago_php_version::PHPVersion,
     /// Whether to enable short open tags (`<?`).
     ///
     /// When enabled (default), `<?` is treated as a short open tag that switches to PHP scripting mode.
-    /// When disabled, only `<?php` and `<?=` are recognized as valid PHP open tags.
+    /// When disabled, `<?php` and `<?=` still open PHP, as do legacy tags on PHP 5 targets.
     ///
     /// This corresponds to PHP's `short_open_tag` ini directive.
     pub enable_short_tags: bool,
@@ -13,7 +15,7 @@ pub struct LexerSettings {
 /// Settings for the parser.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct ParserSettings {
-    /// Source language version, used for version-sensitive operator binding.
+    /// Source language version, used for lexing and version-sensitive operator binding.
     pub php_version: mago_php_version::PHPVersion,
     /// Settings for the lexer.
     pub lexer: LexerSettings,
@@ -27,6 +29,9 @@ pub struct ParserSettings {
 
 impl Default for LexerSettings {
     fn default() -> Self {
-        Self { enable_short_tags: true }
+        Self {
+            php_version: mago_php_version::PHPVersion::default(),
+            enable_short_tags: true,
+        }
     }
 }

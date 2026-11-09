@@ -34,6 +34,7 @@ function runDemoAssertions(): void
 {
     assert(hash_equals('demo', 'demo') === true);
     assert(hash_equals('demo', 'different') === false);
+    assert((new LegacyOffsetDemo())->demo() instanceof Scaffolding\Pen);
     $legacyGeneration = new LegacyGenerationDemo();
     assert(is_string($legacyGeneration->name));
     assert(is_int(LegacyGenerationDemo::$count));

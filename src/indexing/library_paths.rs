@@ -24,6 +24,7 @@ impl Backend {
         root: &Path,
         progress: Option<&crate::progress::ScanProgress>,
     ) {
+        let _version = crate::parser::SourceVersionGuard::new(self.source_php_version(""));
         let paths = self.config().indexing.include_paths(root);
         if paths.is_empty() {
             return;

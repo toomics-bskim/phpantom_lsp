@@ -227,6 +227,7 @@ impl Backend {
         php_version: Option<PhpVersion>,
     ) -> Option<Vec<Arc<ClassInfo>>> {
         // The three helpers below each parse `content`; share one AST.
+        let _version = crate::parser::SourceVersionGuard::new(self.source_php_version(uri));
         let _parse_guard = crate::parser::with_parse_cache(content);
         let file_use_map = self.parse_use_statements(content);
         let constant_imports = self.parse_symbol_imports(content).constants;

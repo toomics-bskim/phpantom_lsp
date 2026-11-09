@@ -375,6 +375,7 @@ impl Backend {
         // parse it again, on every keystroke; the guard makes them reuse one
         // AST.  A nested guard is a no-op, so the workspace and analyze paths
         // that already hold one are unaffected.
+        let _version = crate::parser::SourceVersionGuard::new(self.source_php_version(uri_str));
         let _parse_guard = crate::parser::with_parse_cache(content);
 
         self.collect_syntax_error_diagnostics(uri_str, content, out);
@@ -451,6 +452,7 @@ impl Backend {
         content: &str,
         out: &mut Vec<Diagnostic>,
     ) {
+        let _version = crate::parser::SourceVersionGuard::new(self.source_php_version(uri_str));
         let _parse_guard = crate::parser::with_parse_cache(content);
         let ctx = helpers::FileDiagnosticContext::gather(self, uri_str);
         for collector in SLOW_COLLECTORS {
@@ -478,6 +480,7 @@ impl Backend {
         let _lines = crate::text_position::PassLineTable::new(content);
         // The collectors and the forward walk all parse the file; share one
         // AST between them, as the fast pass does.
+        let _version = crate::parser::SourceVersionGuard::new(self.source_php_version(uri_str));
         let _parse_guard = crate::parser::with_parse_cache(content);
 
         // ── Phase 2: forward-walked diagnostic scope cache ──────

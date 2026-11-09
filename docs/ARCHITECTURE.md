@@ -167,11 +167,20 @@ project for PHP parsing and type representation:
 
 The root Cargo manifest patches `mago-syntax` and `mago-formatter` with
 the source copies in [`third_party/mago`](../third_party/mago/README.md).
-They share version-sensitive concatenation precedence for built-in
-formatting. The formatter passes its target into `ParserSettings`;
-other parser callers still use the modern default until their source
-version is propagated. Keep stub parsing and project source parsing
-distinct when extending that contract.
+Project indexing, lazy loading, diagnostics, request parsing and recovery
+use the selected source version. A synchronous `SourceVersionGuard` carries
+it through the shared parser; worker entry points install their own guard.
+Parse cache identity includes that version, and an open file's retained
+parse records it too. Nested stub parsing temporarily selects modern
+grammar: availability attributes describe older APIs using newer syntax.
+The formatter passes its target into `ParserSettings` independently and
+shares the same lexer and version-sensitive concatenation precedence.
+
+Legacy curly offsets lower to the existing `ArrayAccess` node with the
+original delimiter spans. No source rewrite or second type engine is
+needed. Short tags remain enabled; PHP 5 targets additionally recognize
+ASP and PHP script tags, assuming `asp_tags=1`. PHP 7+ treats those removed
+tags as HTML. This analysis policy does not read the host's `php.ini`.
 
 `mago-phpdoc-syntax` parses a docblock comment and the type expressions
 embedded in its tags in one pass. `src/docblock/parser.rs` adapts its CST

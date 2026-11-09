@@ -505,7 +505,6 @@ async fn legacy_compatibility_matrix() {
 }
 
 #[tokio::test]
-#[ignore = "Legacy source forms need version-aware parsing; the expected result is no syntax error"]
 async fn legacy_source_forms_have_no_syntax_errors() {
     let audit = audit();
     for version in [PhpVersion::new(5, 5), PhpVersion::new(5, 6)] {
@@ -514,6 +513,7 @@ async fn legacy_source_forms_have_no_syntax_errors() {
             "curly_offset",
             "reserved_match_name",
             "hash_bracket_comment",
+            "asp_tag",
         ] {
             let uri = open(&backend, dir.path(), id, source(&audit, id)).await;
             let diagnostics = ready_diagnostics(&backend, &uri).await;
@@ -524,6 +524,214 @@ async fn legacy_source_forms_have_no_syntax_errors() {
                 "{id}: {diagnostics:?}"
             );
         }
+    }
+}
+
+#[test]
+fn legacy_lexer_boundaries_and_original_spans() {
+    use mago_span::HasSpan;
+    use mago_syntax::{cst::Statement, settings::ParserSettings};
+    for (major, minor) in [(5, 5), (5, 6), (7, 3), (7, 4), (8, 0), (8, 1), (8, 5)] {
+        for (name, since) in [
+            ("Match", (8, 0)),
+            ("fn", (7, 4)),
+            ("Enum", (8, 1)),
+            ("Readonly", (8, 1)),
+        ] {
+            let text = format!("<?php /* 한글 😀 */ class {name} {{}}");
+            let arena = mago_allocator::LocalArena::new();
+            let settings = ParserSettings {
+                php_version: mago_php_version::PHPVersion::new(major, minor, 0),
+                ..Default::default()
+            };
+            let program = mago_syntax::parser::parse_file_content_with_settings(
+                &arena,
+                mago_database::file::FileId::new(b"legacy.php"),
+                text.as_bytes(),
+                settings,
+            );
+            if (major, minor) < since {
+                assert!(
+                    program.errors.is_empty(),
+                    "{major}.{minor} {name}: {:?}",
+                    program.errors
+                );
+                let class = program
+                    .statements
+                    .iter()
+                    .find_map(|s| {
+                        if let Statement::Class(c) = s {
+                            Some(c)
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap();
+                let span = class.name.span();
+                assert_eq!(
+                    &text[span.start.offset as usize..span.end.offset as usize],
+                    name
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn source_lexer_keeps_modern_syntax_and_tag_contents_distinct() {
+    use mago_syntax::{cst::DirectVariable, settings::ParserSettings, walker::Walker};
+    struct Variables;
+    impl<'ast, 'arena> Walker<'ast, 'arena, usize> for Variables {
+        fn walk_in_direct_variable(&self, _: &'ast DirectVariable<'arena>, count: &mut usize) {
+            *count += 1;
+        }
+    }
+    let text = "<p>$html</p><% $asp; // comment %><%= $echo %><script language=php>$script;</script><? $short ?><?php $full; #[Marker] class Tagged {}\n$tail; ?>";
+    for (major, expected) in [(5, 6), (8, 3)] {
+        let settings = ParserSettings {
+            php_version: mago_php_version::PHPVersion::new(major, 5, 0),
+            ..Default::default()
+        };
+        let arena = mago_allocator::LocalArena::new();
+        let program = mago_syntax::parser::parse_file_content_with_settings(
+            &arena,
+            mago_database::file::FileId::new(b"tags.php"),
+            text.as_bytes(),
+            settings,
+        );
+        assert!(program.errors.is_empty(), "{:?}", program.errors);
+        let mut variables = 0;
+        Variables.walk_program(program, &mut variables);
+        let classes = program
+            .statements
+            .iter()
+            .filter(|s| matches!(s, mago_syntax::cst::Statement::Class(_)))
+            .count();
+        assert_eq!(variables, expected);
+        assert_eq!(classes, usize::from(major >= 8));
+    }
+    let arena = mago_allocator::LocalArena::new();
+    let text = b"<?php #[Attribute] class Marker {} enum Kind { case One; } readonly class Model {} $fn = fn() => match (1) { 1 => new Model() };";
+    let program = mago_syntax::parser::parse_file_content(
+        &arena,
+        mago_database::file::FileId::new(b"modern.php"),
+        text,
+    );
+    assert!(program.errors.is_empty(), "{:?}", program.errors);
+}
+
+#[tokio::test]
+async fn legacy_source_forms_keep_types_navigation_and_recovery() {
+    for version in [PhpVersion::new(5, 5), PhpVersion::new(5, 6)] {
+        let (dir, backend) = project(version).await;
+        let mut exported = Vec::new();
+        for (id, opening, closing) in [
+            ("full", "<?php", "?>"),
+            ("short", "<?", "?>"),
+            ("asp", "<%", "%>"),
+            ("script", "<ScRiPt\tlanguage = 'PHP' >", "</sCrIpT >"),
+        ] {
+            for newline in ["\n", "\r\n"] {
+                let text = format!("<p>한글 😀</p>\n{opening}\n#[ordinary comment, not an attribute\nclass Match {{\n    /** @return self 한글 😀 */ public function next() {{ return $this; }}\n}}\n$values = array(new Match());\n$probe = $values{{0}};\n/* 한글 😀 */ $probe->next();\n$values{{0}}->next();\n{closing}<p>끝</p>").replace('\n', newline);
+                let uri = open(&backend, dir.path(), id, &text).await;
+                for (kind, source) in [
+                    ("original", text.clone()),
+                    ("formatted", format(&backend, &uri, &text, false).await),
+                ] {
+                    exported.push(runtime_case(
+                        &format!("{id}_{kind}_{}", newline.len()),
+                        &format!("{source}<?php $probe = get_class($probe);"),
+                        &json!(["string", "Match"]),
+                    ));
+                }
+                let diagnostics = ready_diagnostics(&backend, &uri).await;
+                assert!(diagnostics.is_empty(), "{id}: {diagnostics:?}");
+                let pos = common::position_of(&text, "$probe->next");
+                let hover =
+                    common::markup_hover_at(&backend, &uri, pos.line, pos.character + 2).await;
+                assert!(hover.contains("Match"), "{id}: {hover}");
+                for call in ["$probe->next", "$values{0}->next"] {
+                    let offset = text.find(call).unwrap() + call.len() - 4;
+                    let pos = common::offset_position(&text, offset);
+                    let target =
+                        common::goto_definition_at(&backend, &uri, pos.line, pos.character + 1)
+                            .await
+                            .expect("legacy member definition");
+                    let target = serde_json::to_value(target).unwrap();
+                    let target = target.as_array().map_or(&target, |items| &items[0]);
+                    assert_eq!(target["uri"], uri.as_str());
+                    assert_eq!(
+                        target["range"]["start"],
+                        json!(common::position_of(&text, "next()"))
+                    );
+                }
+                // Reparse after incomplete edits must retain the earlier class and its grammar.
+                let cut = text.find("$probe->next").unwrap();
+                for subject in ["$probe->", "$values{0}->"] {
+                    let edited = format!("{}{subject}", &text[..cut]);
+                    let uri = open(&backend, dir.path(), id, &edited).await;
+                    let pos = common::offset_position(&edited, edited.len());
+                    let response =
+                        common::completion_response(&backend, &uri, pos.line, pos.character, None)
+                            .await;
+                    let response = serde_json::to_value(response).unwrap();
+                    assert!(
+                        response.to_string().contains("next"),
+                        "{id} {subject}: {response}"
+                    );
+                }
+            }
+        }
+        if let Some(output) = std::env::var_os("PHPANTOM_COMPAT_OUTPUT") {
+            std::fs::create_dir_all(&output).unwrap();
+            std::fs::write(Path::new(&output).join(format!("sources-{}.{}.json", version.major, version.minor)), serde_json::to_vec_pretty(&json!({"target": format!("{}.{}", version.major, version.minor), "cases": exported})).unwrap()).unwrap();
+        }
+    }
+}
+
+#[tokio::test]
+async fn legacy_unopened_files_are_discovered_and_resolved_by_namespace() {
+    for composer in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dunce::canonicalize(dir.path()).unwrap();
+        std::fs::write(root.join(".phpantom.toml"), "[php]\nversion = '5.5'\n").unwrap();
+        if composer {
+            std::fs::write(
+                root.join("composer.json"),
+                r#"{"autoload":{"psr-4":{"Legacy\\":"src/"}}}"#,
+            )
+            .unwrap();
+        }
+        std::fs::create_dir(root.join("src")).unwrap();
+        let declaration = "<?php\r\n#[not an attribute\r\nnamespace Legacy;\r\n#[ isn't an attribute: ' class Phantom {}\r\nclass Match { /** @return self */ public function next() { return $this; } }\r\n";
+        std::fs::write(root.join("src/Match.php"), declaration).unwrap();
+        std::fs::write(
+            root.join("Global.php"),
+            "<?php class Match { function wrong() {} }",
+        )
+        .unwrap();
+        let backend = Backend::new_test_with_full_stubs();
+        common::initialize_with_options(&backend, &root, None).await;
+        let text = "<?php\nnamespace Caller;\nuse Legacy\\Match as Item;\n$values = array(new Item());\n$probe = $values{0};\n$probe->next();\n";
+        let uri = open(&backend, &root, "caller", text).await;
+        let diagnostics = ready_diagnostics(&backend, &uri).await;
+        assert!(
+            diagnostics.is_empty(),
+            "composer={composer}: {diagnostics:?}"
+        );
+        let pos = common::position_of(text, "next()");
+        let targets = common::definition_locations(
+            common::goto_definition_at(&backend, &uri, pos.line, pos.character + 1).await,
+        );
+        assert_eq!(targets.len(), 1);
+        assert_eq!(
+            targets[0].uri.as_str(),
+            common::file_uri(&dunce::canonicalize(root.join("src/Match.php")).unwrap())
+        );
+        assert_eq!(
+            targets[0].range.start,
+            common::position_of(declaration, "next()")
+        );
     }
 }
 

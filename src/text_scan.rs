@@ -78,10 +78,14 @@ pub(crate) fn skip_block_comment(bytes: &[u8], pos: usize) -> usize {
 ///
 /// `//` and `#` run to the end of the line, `/* … */` to its terminator,
 /// and an unterminated block comment to the end of the input. `#[` opens
-/// a PHP attribute rather than a comment.
+/// a PHP attribute rather than a comment on PHP 8+.
 pub(crate) fn skip_php_comment(bytes: &[u8], pos: usize) -> Option<usize> {
     match (bytes.get(pos)?, bytes.get(pos + 1)) {
-        (b'#', Some(b'[')) => None,
+        (b'#', Some(b'['))
+            if crate::parser::source_version() >= mago_php_version::PHPVersion::PHP80 =>
+        {
+            None
+        }
         (b'#', _) | (b'/', Some(b'/')) => Some(skip_line_comment(bytes, pos)),
         (b'/', Some(b'*')) => Some(skip_block_comment(bytes, pos)),
         _ => None,
@@ -441,7 +445,13 @@ fn is_namespace_statement(bytes: &[u8], pos: usize, len: usize) -> bool {
         let line = &code[line_start..];
         let marker = line
             .windows(2)
-            .rposition(|w| w == b"//" || (w[0] == b'#' && w[1] != b'['))
+            .rposition(|w| {
+                w == b"//"
+                    || (w[0] == b'#'
+                        && (w[1] != b'['
+                            || crate::parser::source_version()
+                                < mago_php_version::PHPVersion::PHP80))
+            })
             .or_else(|| (line.last() == Some(&b'#')).then(|| line.len() - 1));
         match marker {
             Some(m) => before = &code[..line_start + m],

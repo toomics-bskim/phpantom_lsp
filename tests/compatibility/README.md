@@ -38,6 +38,19 @@ With an `8.5` target the same expression returns string `"103"`, which formattin
 must also preserve. The patched dependency sources and their provenance are
 documented in [`third_party/mago`](../../third_party/mago/README.md).
 
+## Legacy source forms
+
+The source tests cover legacy identifiers, offsets and comments, mixed HTML,
+short/ASP/script tags, incomplete edits, Unicode and CRLF positions, and
+cross-file discovery with and without Composer. Modern syntax and stub
+availability stay covered separately. Short tags remain enabled; PHP 5
+analysis assumes ASP tags are enabled, without reading a host `php.ini`.
+
+`PHPANTOM_COMPAT_OUTPUT` also exports `sources-5.5.json` and `sources-5.6.json`.
+Pass each to `scripts/check-php-compatibility.mjs` with its matching reference
+runtime to check the source and formatted result. These checks execute the
+legacy forms that cannot run directly in the modern `examples/php` playground.
+
 ## Built-in availability
 
 `cargo test --test integration builtin_availability` checks introduction and
@@ -103,14 +116,15 @@ entry counts. Startup excludes compilation and document opening. The test
 is ignored in normal runs because timings are observations, not assertions.
 
 One local run on 2026-11-09 used Rust 1.99.1, an unoptimized Linux Docker
-build with debug info disabled, and the repository's embedded stubs:
+build with debug info disabled, version-aware source parsing, and the
+repository's embedded stubs:
 
 | Composer requirement | Startup (ms) | Hover p50 / p95 (ms) | Indexed stub functions / constants |
 | --- | ---: | ---: | ---: |
-| `5.5` | 32.4 | 0.40 / 0.45 | 4,906 / 7,640 |
-| `8.5` | 27.0 | 0.40 / 0.49 | 4,999 / 8,085 |
-| `5.6` | 29.3 | 0.52 / 0.56 | 4,924 / 7,640 |
-| `^8.0` or `^5.5` | 58.5 | 0.36 / 0.47 | 4,906 / 7,640 |
+| `5.5` | 32.7 | 0.38 / 0.49 | 4,906 / 7,640 |
+| `8.5` | 30.2 | 0.38 / 0.46 | 4,999 / 8,085 |
+| `5.6` | 29.8 | 0.33 / 0.45 | 4,924 / 7,640 |
+| `^8.0` or `^5.5` | 47.7 | 0.38 / 0.48 | 4,906 / 7,640 |
 
 The legacy cases retained six class entries and the modern case retained
 15, with zero function entries and two parsed files in each lazy cache.
@@ -121,10 +135,9 @@ earlier build. Index counts alone do not establish complete PHP compatibility.
 
 ## Known gaps and extending coverage
 
-The ignored Rust tests assert the desired behavior for legacy parsing and
-unsupported-version diagnostics. Run them explicitly with
-`cargo test --test legacy_compatibility -- --ignored` when fixing those
-features, then remove their ignore attributes. They are not passing
+The ignored Rust test asserts the desired unsupported-version diagnostics.
+Run it explicitly with `cargo test --test legacy_compatibility -- --ignored`
+when implementing them, then remove its ignore attribute. It is not passing
 coverage. The unsupported-version check is provisional until the server
 has a diagnostic code for it; replace its message assertion with that code
 when implementing the diagnostic.

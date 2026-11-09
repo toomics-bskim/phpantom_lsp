@@ -179,7 +179,9 @@ fn scan_files_parallel<T: Sync>(
     name: &'static str,
     emit: impl Fn(&T, &mut Vec<(String, PathBuf)>) + Sync,
 ) -> HashMap<String, PathBuf> {
+    let version = crate::parser::source_version();
     let found = crate::parallel::map_in_blocks(name, files, SCAN_BLOCK_FILES, |file| {
+        let _version = crate::parser::SourceVersionGuard::new(version);
         progress_add_done(progress);
         let mut declared = Vec::new();
         emit(file, &mut declared);
@@ -327,11 +329,13 @@ fn scan_files_parallel_noting(
     progress: Option<&ScanProgress>,
     note: impl Fn(&Path, &[u8]) -> bool + Sync,
 ) -> (WorkspaceScanResult, Vec<PathBuf>) {
+    let version = crate::parser::source_version();
     let scanned = crate::parallel::map_in_blocks(
         "scan_files_parallel_full",
         files,
         SCAN_BLOCK_FILES,
         |(path, origin)| {
+            let _version = crate::parser::SourceVersionGuard::new(version);
             progress_add_done(progress);
             let content = read_for_scan(path).ok()?;
             let noted = note(path, &content);

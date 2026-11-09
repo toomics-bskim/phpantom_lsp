@@ -322,7 +322,9 @@ impl Backend {
             let content: Option<Arc<String>> = self.open_files.read().get(uri_str).cloned();
             // The checks that read the member a diagnostic points at share
             // one parse of the file.
-            let _parse_guard = content.clone().map(crate::parser::with_parse_cache_arc);
+            let _parse_guard = content
+                .clone()
+                .map(|text| self.enter_parse_cache(uri_str, text));
             let filtered: Vec<Diagnostic> = phpstan_before
                 .iter()
                 .filter(|d| {

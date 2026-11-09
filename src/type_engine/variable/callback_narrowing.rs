@@ -11,7 +11,7 @@
 use mago_allocator::LocalArena;
 use mago_database::file::FileId;
 use mago_syntax::cst::*;
-use mago_syntax::parser::parse_file_content;
+use mago_syntax::parser::parse_file_content_with_settings;
 
 use crate::atom::{bytes_to_str, literal_bytes_to_str};
 use crate::php_type::PhpType;
@@ -68,7 +68,12 @@ pub(in crate::type_engine) fn narrow_callback_param_text(
     }
     let arena = LocalArena::new();
     let source = format!("<?php {trimmed};");
-    let program = parse_file_content(&arena, FileId::new(b"callback.php"), source.as_bytes());
+    let program = parse_file_content_with_settings(
+        &arena,
+        FileId::new(b"callback.php"),
+        source.as_bytes(),
+        crate::parser::source_settings(),
+    );
     let expr = program.statements.iter().find_map(|stmt| match stmt {
         Statement::Expression(stmt) => Some(stmt.expression),
         _ => None,

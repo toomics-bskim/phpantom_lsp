@@ -31,6 +31,23 @@ use Exception;
 // Restart PHPantom after changing [php] version in .phpantom.toml.
 hash_equals('demo', 'demo');
 
+// Try: complete `$item->` in this method; it offers Pen's members.
+// In a PHP 5 project, copy the method body and replace `[0]` with `{0}`:
+// the same members resolve. Keep square brackets here so this modern
+// playground also runs on PHP 8. Legacy source fixtures, including tags
+// and old identifier names, live in tests/legacy_compatibility.rs.
+class LegacyOffsetDemo
+{
+    /** @return Scaffolding\Pen */
+    public function demo()
+    {
+        $items = array(new Scaffolding\Pen());
+        $item = $items[0];
+        $item->write();
+        return $item;
+    }
+}
+
 // Try: type `new DateT` and accept `DateTime`. The `use DateTime;` statement
 // is inserted at the top of the import list above to maintain alphabetical
 // order (it sorts ahead of the `Demo\Scaffolding\...` imports).

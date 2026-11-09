@@ -21,7 +21,7 @@ use crate::types::{ClassInfo, DefineInfo, FunctionInfo, NamespaceSpan};
 use mago_allocator::LocalArena;
 
 use mago_span::HasSpan;
-use mago_syntax::parser::parse_file_content;
+use mago_syntax::parser::parse_file_content_with_settings;
 
 use crate::Backend;
 
@@ -212,6 +212,7 @@ impl Backend {
         content: Arc<String>,
         template: Option<TemplateLowering>,
     ) -> bool {
+        let _version = super::SourceVersionGuard::new(self.source_php_version(uri));
         let (mut update, parsed) = if self.open_files.read().contains_key(uri) {
             let mut parse_errors = Vec::new();
             let parsed = super::ParsedFile::new(content, |arena, text| {
@@ -447,6 +448,7 @@ impl Backend {
     }
 
     fn build_ast_index_update(&self, uri: &str, content: &str) -> AstIndexUpdate {
+        let _version = super::SourceVersionGuard::new(self.source_php_version(uri));
         with_reusable_arena(|arena| {
             let (parse_errors, program) = parse_with_errors(arena, content);
             self.ast_index_update_from(arena, uri, content, parse_errors, program)
@@ -762,7 +764,12 @@ fn parse_with_errors<'a>(
     content: &'a str,
 ) -> (Vec<ParseErrorEntry>, &'a mago_syntax::cst::Program<'a>) {
     let file_id = mago_database::file::FileId::new(b"input.php");
-    let program = parse_file_content(arena, file_id, content.as_bytes());
+    let program = parse_file_content_with_settings(
+        arena,
+        file_id,
+        content.as_bytes(),
+        super::source_settings(),
+    );
 
     let parse_errors: Vec<ParseErrorEntry> = program
         .errors

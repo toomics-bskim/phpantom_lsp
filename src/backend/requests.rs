@@ -68,10 +68,12 @@ impl Backend {
         uri: &str,
         content: Arc<String>,
     ) -> crate::parser::ParseCacheGuard<'static> {
-        match self.kept_parse(uri, &content) {
-            Some(parsed) => crate::parser::with_parsed_file_cache(parsed, content),
-            None => crate::parser::with_parse_cache_arc(content),
-        }
+        crate::parser::with_parse_version(self.source_php_version(uri), || {
+            match self.kept_parse(uri, &content) {
+                Some(parsed) => crate::parser::with_parsed_file_cache(parsed, content),
+                None => crate::parser::with_parse_cache_arc(content),
+            }
+        })
     }
 
     /// Keep `parsed`, the parse of the open file `uri`, for the passes over
@@ -100,7 +102,9 @@ impl Backend {
             Some((kept, parsed)) if kept == uri => Arc::clone(parsed),
             _ => return None,
         };
-        (Arc::ptr_eq(parsed.content(), content) || parsed.content() == content).then_some(parsed)
+        (parsed.source_version == self.source_php_version(uri)
+            && (Arc::ptr_eq(parsed.content(), content) || parsed.content() == content))
+            .then_some(parsed)
     }
 
     /// Drop the parse kept for `uri`, which has been closed.
@@ -118,7 +122,11 @@ impl Backend {
         uri: &str,
         content: &'a str,
     ) -> RequestScope<'a> {
-        self.request_scope_with(uri, || crate::parser::with_parse_cache(content))
+        self.request_scope_with(uri, || {
+            crate::parser::with_parse_version(self.source_php_version(uri), || {
+                crate::parser::with_parse_cache(content)
+            })
+        })
     }
 
     fn request_scope_with<'a>(

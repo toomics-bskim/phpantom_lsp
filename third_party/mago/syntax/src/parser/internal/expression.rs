@@ -165,8 +165,9 @@ where
                 break;
             }
 
-            if next.kind.is_postfix() {
-                let postfix_precedence = Precedence::postfix(&next.kind);
+            let curly_offset = next.kind == T!["{"] && self.php_version < mago_php_version::PHPVersion::PHP80;
+            if next.kind.is_postfix() || curly_offset {
+                let postfix_precedence = Precedence::postfix(&if curly_offset { T!["["] } else { next.kind });
                 if postfix_precedence < precedence {
                     break;
                 }
@@ -367,10 +368,11 @@ where
                     }))
                 }
             }
-            T!["["] => {
+            T!["["] | T!["{"] => {
+                let closing = if operator.kind == T!["{"] { T!["}"] } else { T!["]"] };
                 let left_bracket = self.stream.consume_span()?;
                 let next = self.stream.lookahead(0)?.ok_or_else(|| self.stream.unexpected(None, &[]))?;
-                if matches!(next.kind, T!["]"]) {
+                if next.kind == T!["]"] && closing == T!["]"] {
                     Expression::ArrayAppend(ArrayAppend {
                         array: lhs,
                         left_bracket,
@@ -393,7 +395,7 @@ where
                         array: lhs,
                         left_bracket,
                         index,
-                        right_bracket: self.stream.eat_span(T!["]"])?,
+                        right_bracket: self.parse_closing_span(closing)?,
                     })
                 }
             }

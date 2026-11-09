@@ -280,6 +280,7 @@ impl Backend {
         percent_range: (u32, u32),
         progress: Option<&crate::progress::ScanProgress>,
     ) -> &'static str {
+        let _version = crate::parser::SourceVersionGuard::new(self.source_php_version(""));
         // A phase's position in `percent_range`, in seventieths of it.
         let (lo, hi) = percent_range;
         let at = |share: u32| lo + (hi - lo) * share / 70;
@@ -729,14 +730,17 @@ impl Backend {
         skip_dirs.extend(drupal_tree.map(drupal_core_dir));
         let filters = self.index_filters();
         let extra_roots = self.claim_extra_roots();
-        let scan = classmap_scanner::scan_roots_full(
-            &[root.to_path_buf()],
-            &extra_roots,
-            &skip_dirs,
-            &filters,
-            progress,
-            Some(self.followed_links()),
-        );
+        let scan = {
+            let _version = crate::parser::SourceVersionGuard::new(self.source_php_version(""));
+            classmap_scanner::scan_roots_full(
+                &[root.to_path_buf()],
+                &extra_roots,
+                &skip_dirs,
+                &filters,
+                progress,
+                Some(self.followed_links()),
+            )
+        };
         self.symbols.merge_scan(scan);
 
         if let Some(web_root) = drupal_tree {
@@ -801,14 +805,17 @@ impl Backend {
         let extra_roots = self.claim_extra_roots();
         let skip_dirs: HashSet<PathBuf> =
             drupal_web_root.map(drupal_core_dir).into_iter().collect();
-        let scan = classmap_scanner::scan_roots_full(
-            &[root.to_path_buf()],
-            &extra_roots,
-            &skip_dirs,
-            &filters,
-            progress,
-            Some(self.followed_links()),
-        );
+        let scan = {
+            let _version = crate::parser::SourceVersionGuard::new(self.source_php_version(""));
+            classmap_scanner::scan_roots_full(
+                &[root.to_path_buf()],
+                &extra_roots,
+                &skip_dirs,
+                &filters,
+                progress,
+                Some(self.followed_links()),
+            )
+        };
         self.symbols.merge_scan(scan);
 
         let source = match drupal_web_root {
@@ -842,6 +849,7 @@ impl Backend {
         // Like an `include` entry, a workspace folder is walked whatever
         // the strategy: the editor named it, so it is not a fallback.
         if !unwalked_roots.is_empty() {
+            let _version = crate::parser::SourceVersionGuard::new(self.source_php_version(""));
             let scan = classmap_scanner::scan_roots_full(
                 &[],
                 unwalked_roots,

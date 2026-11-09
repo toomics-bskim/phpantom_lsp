@@ -62,6 +62,7 @@ pub fn find_classes(content: &[u8]) -> Vec<String> {
 /// without it, it collects only class-likes and compiles down to the
 /// lean PSR-4 loop.
 fn scan<const SYMBOLS: bool>(content: &[u8], result: &mut ScanResult) {
+    let attributes = crate::parser::source_version() >= mago_php_version::PHPVersion::PHP80;
     let mut namespace = String::new();
     let len = content.len();
     let mut i = 0;
@@ -226,7 +227,7 @@ fn scan<const SYMBOLS: bool>(content: &[u8], result: &mut ScanResult) {
 
         // Hash comments (but not PHP attributes #[...])
         if b == b'#' {
-            if i + 1 < len && content[i + 1] == b'[' {
+            if attributes && i + 1 < len && content[i + 1] == b'[' {
                 // PHP attribute — skip past it (it's not a comment)
                 i += 1;
                 continue;
