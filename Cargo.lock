@@ -1093,8 +1093,6 @@ dependencies = [
 [[package]]
 name = "mago-phpdoc-syntax"
 version = "1.58.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "674513b1ebb52be1568ea409e54dbef1104b24da4b5446a012b6f450e86f4eba"
 dependencies = [
  "mago-allocator",
  "mago-database",

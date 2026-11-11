@@ -121,6 +121,7 @@ criterion = { version = "0.8", features = ["html_reports"] }
 [patch.crates-io]
 mago-syntax = { path = "third_party/mago/syntax" }
 mago-formatter = { path = "third_party/mago/formatter" }
+mago-phpdoc-syntax = { path = "third_party/mago/phpdoc-syntax" }
 
 [[test]]
 name = "fixture_runner"
@@ -164,4 +165,8 @@ harness = false
 
 [[bench]]
 name = "tempest"
+harness = false
+
+[[bench]]
+name = "docblock"
 harness = false

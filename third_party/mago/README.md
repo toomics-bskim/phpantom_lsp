@@ -1,8 +1,9 @@
 # Mago dependency patches
 
-`syntax/` and `formatter/` contain the production sources of the
-`mago-syntax` and `mago-formatter` 1.58.2 crates, respectively. The root
-Cargo manifest patches both crates so transitive users share the same CST.
+`syntax/`, `formatter/`, and `phpdoc-syntax/` contain the production sources
+of the `mago-syntax`, `mago-formatter`, and `mago-phpdoc-syntax` 1.58.2
+crates, respectively. The root Cargo manifest patches these crates so
+transitive users share the same parsers and CST.
 All other Mago crates still come from crates.io.
 
 Upstream: [carthage-software/mago](https://github.com/carthage-software/mago),
@@ -13,6 +14,7 @@ The published crate archive SHA-256 hashes are:
 | --- | --- |
 | mago-syntax 1.58.2 | `d36dc15d1cec650a36f6099ab4f7ec18fa8266f6f0677eed7831a55dfe95adc8` |
 | mago-formatter 1.58.2 | `593a7043aed31970138ac36e6a65872192983189dced150959fb9f00f5ec1650` |
+| mago-phpdoc-syntax 1.58.2 | `674513b1ebb52be1568ea409e54dbef1104b24da4b5446a012b6f450e86f4eba` |
 
 Only `src/` and the published manifests are copied. Upstream test/benchmark
 targets and development dependencies are omitted from these manifests;
@@ -21,6 +23,12 @@ are preserved in [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE)
 
 ## Local changes
 
+- `phpdoc-syntax/src/lexer/mod.rs`: limit the closing-marker search in a
+  line comment to the current line. Repeated comments in generated array
+  shapes no longer rescan the rest of the document. Token values and source
+  spans retain upstream behavior; coverage lives in
+  `tests/unit/docblock_lexer.rs`, with scaling benchmarks in
+  `benches/docblock.rs`.
 - `syntax/src/settings.rs` and `syntax/src/parser/mod.rs`: carry the source
   PHP version through the parser and lexer, defaulting to the upstream modern version.
 - `syntax/src/lexer/mod.rs`: respect keyword and attribute introduction

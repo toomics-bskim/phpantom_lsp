@@ -712,6 +712,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Performance and stability
 
+- **Generated PHP configuration files index faster.** Large PHPDoc declarations with inline comments no longer cause a disproportionate parsing delay as the file grows.
 - **Large workspaces prepare navigation faster.** File discovery and resource analysis now share work across CPU cores. Workspace indexing also preserves unsaved changes in open YAML and XML documents.
 - **Background preparation can stop inside large files.** Reference preparation now responds to shutdown and its time budget while analyzing a file. Later searches still finish any work it did not complete.
 - **Concurrent navigation searches share workspace discovery.** Bursts of Find References and Go to Implementation requests no longer repeat the same project scan. Later searches still discover newly added files when the editor has not reported them.
