@@ -712,6 +712,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Performance and stability
 
+- **Cancelled searches clear their progress indicators.** Find References, Go to Implementation, and type hierarchy searches no longer leave a background task spinning after the editor cancels the request and its work finishes.
+- **Background analysis finishes on nested array writes.** Large functions that update arrays through dynamic keys no longer keep a CPU core busy after indexing.
 - **`analyze` no longer stalls on large projects.** Analyzing a large framework codebase, such as `laravel/framework` itself, could sit idle for 10 to 30 seconds before reporting anything. It now takes about a second there. Contributed by @stubbedev.
 - **`analyze` reports the same errors on every run of a Laravel project.** A file calling `user()` on a request or guard could occasionally lose a type error between two runs of the same code. Contributed by @stubbedev.
 - **Classes inside a phar no longer go missing on a busy machine.** Classes shipped in a `.phar`, such as PHPStan's, could sometimes be reported as not found when the machine was under load.
@@ -720,6 +722,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Background analysis tracing.** Optional debug and trace logs identify files and analysis stages that keep the server busy after indexing.
 - **PHP target compatibility checks.** Portable regression fixtures compare legacy and modern targets, with optional pinned PHP 5.5 and 5.6 runtime checks for generated edits and formatting.
 - **Tempest performance checks.** CI measures template editing, completion, navigation, and memory use against the Tempest playground. Contributed by @shuvroroy.
 - **Pull request benchmarks no longer fail on a slow runner.** Each benchmark runner measures both the PR and its base, so the 30% regression check reflects the change rather than which machine ran it. Contributed by @shuvroroy. Closes #489.

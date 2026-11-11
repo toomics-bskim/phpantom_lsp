@@ -114,6 +114,15 @@ pub(crate) fn is_runtime_value_subtype(subtype: &PhpType, supertype: &PhpType) -
         return true;
     }
 
+    // A container's value type can itself be a union. Each alternative
+    // must fit the wider value type, potentially through a different
+    // member of that type's union.
+    if let TypeKind::Union(members) = subtype.kind() {
+        return members.iter().all(|member| {
+            equivalent_for_dedup(member, supertype) || is_runtime_value_subtype(member, supertype)
+        });
+    }
+
     // `flatten` keeps a union supertype atomic when it is wrapped in a
     // marker (`Benevolent`'s failure branch has to survive on whatever
     // entry represents it — see `ResolvedType::types_joined`), so a

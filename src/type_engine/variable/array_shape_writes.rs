@@ -5,8 +5,8 @@ use mago_syntax::cst::*;
 
 use crate::atom::{atom, bytes_to_str, literal_bytes_to_str};
 use crate::php_type::{
-    LiteralValue, PhpType, ShapeEntry, TypeKind, class_name_key, class_name_shape_key,
-    is_decimal_int_array_key, runtime_shape_keys,
+    ARRAY_JOIN_GROUP_THRESHOLD, LiteralValue, PhpType, ShapeEntry, TypeKind, class_name_key,
+    class_name_shape_key, is_decimal_int_array_key, runtime_shape_keys,
 };
 use crate::types::ResolvedType;
 
@@ -150,6 +150,10 @@ pub(super) fn merge_nested_array_write(
                     })
                     .collect(),
             )
+        } else if members.len() >= ARRAY_JOIN_GROUP_THRESHOLD {
+            // Normalize growing alternatives before the next write can
+            // multiply them again, rather than waiting for an array read.
+            PhpType::join_runtime_value_types(written.collect())
         } else {
             PhpType::union(written.collect())
         };

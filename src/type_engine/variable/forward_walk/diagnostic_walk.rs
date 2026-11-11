@@ -582,6 +582,7 @@ pub(crate) fn seed_and_walk_function_body<'b>(
     TEST_BODY_WALKS.with(|count| count.set(count.get() + 1));
 
     let ctx = &ctx.for_declaration(fn_span_start);
+    tracing::trace!(target: "phpantom_lsp::scope_walk", uri = ctx.file.uri, thread = ?std::thread::current().id(), offset = fn_span_start, phase = "body_begin");
     let body: Vec<&Statement<'_>> = body_statements.collect();
     let mut scope = seed_body_scope(parameters, &body, fn_span_start, owner, ctx);
 
@@ -591,6 +592,7 @@ pub(crate) fn seed_and_walk_function_body<'b>(
 
     // Walk the entire body, recording snapshots at each statement.
     walk_body_for_diagnostics(body.iter().copied(), &mut scope, ctx);
+    tracing::trace!(target: "phpantom_lsp::scope_walk", uri = ctx.file.uri, thread = ?std::thread::current().id(), offset = fn_span_start, phase = "body_end");
 }
 
 /// Walk the method bodies of an anonymous class expression, seeding

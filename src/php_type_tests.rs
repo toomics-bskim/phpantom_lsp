@@ -4433,6 +4433,88 @@ mod simplification_tests {
         assert!(PhpType::literal_float("1.5").is_subtype_of(&PhpType::named(atom("real"))));
     }
 
+    #[test]
+    fn runtime_value_join_checks_every_nested_union_alternative() {
+        for (narrow, wide) in [
+            ("array<int, int|string>", "array<int, scalar>"),
+            ("array<int, 1|'x'>", "array<int, int|string>"),
+            ("array<'a'|'b', int>", "array<string, int>"),
+            (
+                "array{items: array<int, 1|'x'>}",
+                "array{items: array<int, int|string>}",
+            ),
+        ] {
+            let narrow = PhpType::parse(narrow);
+            let wide = PhpType::parse(wide);
+            for members in [
+                vec![narrow.clone(), wide.clone()],
+                vec![wide.clone(), narrow.clone()],
+            ] {
+                assert_eq!(PhpType::join_runtime_value_types(members), wide);
+            }
+        }
+
+        for (left, right) in [
+            ("array<int, int|string>", "array<int, float|string>"),
+            ("array<int, int|string>", "array<int, int|bool>"),
+            ("array<'a'|'b', int>", "array<'a'|'c', int>"),
+        ] {
+            let members = vec![PhpType::parse(left), PhpType::parse(right)];
+            assert_eq!(
+                PhpType::join_runtime_value_types(members.clone()),
+                PhpType::union(members),
+            );
+        }
+    }
+
+    #[test]
+    fn runtime_value_join_bounds_shapes_inside_shared_array_layers() {
+        for depth in [1, 2, 4] {
+            let wrap = |mut value: PhpType| {
+                for _ in 0..depth {
+                    value =
+                        PhpType::generic_atom(atom("non-empty-array"), vec![PhpType::int(), value]);
+                }
+                value
+            };
+            let mut members: Vec<_> = (0..300)
+                .map(|index| {
+                    wrap(PhpType::array_shape(vec![ShapeEntry {
+                        key: Some(format!("field{index}")),
+                        value_type: if index % 2 == 0 {
+                            PhpType::int()
+                        } else {
+                            PhpType::string()
+                        },
+                        optional: false,
+                    }]))
+                })
+                .collect();
+            let other = PhpType::parse("array<string, array{keep: Bar}>");
+            let direct = PhpType::parse("array{direct: bool}");
+            members.extend([other.clone(), direct.clone(), PhpType::int()]);
+            assert_eq!(
+                PhpType::join_runtime_value_types(members),
+                PhpType::union(vec![
+                    wrap(PhpType::parse("non-empty-array<string, int|string>")),
+                    other,
+                    direct,
+                    PhpType::int(),
+                ]),
+            );
+        }
+
+        // Small unions keep the correlation between each array's entries.
+        let members = vec![
+            PhpType::parse("array<int, array{a: int}>"),
+            PhpType::parse("array<int, array{b: string}>"),
+        ];
+        assert_eq!(
+            PhpType::join_runtime_value_types(members.clone()),
+            PhpType::union(members),
+        );
+    }
+
     /// `real` is a float alias only in lowercase. A userland class named `Real`
     /// is a class like any other, so it must not be folded into `float`.
     #[test]

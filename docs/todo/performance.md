@@ -20,6 +20,30 @@ against that bar.
 
 ---
 
+## P93. Concurrent navigation requests repeat the workspace walk
+
+**Impact: High · Complexity: Medium**
+
+OpenIDEA sends reference and implementation requests automatically for
+declarations in view. Each request refreshes the completed workspace index
+under the same lock, so a burst queues one directory walk per request.
+On Windows, a legacy project with about 7,800 PHP files took 25.4 seconds
+to answer 20 concurrent reference requests after initial indexing finished;
+each request returned the same 424 locations.
+
+Coalesce overlapping refreshes while preserving discovery of files created
+without watcher notifications. A later explicit request must still discover
+such a file, as covered by
+`request_refresh_discovers_a_file_added_after_indexing`. Verify reference
+results and cancellation while benchmarking the burst, rather than hiding
+progress or skipping workspace data.
+
+**Where to look:** `ensure_workspace_indexed_with_progress_mode` in
+`src/indexing/preload.rs`, `src/backend/workspace_index_state.rs`, and the
+navigation handlers in `src/server.rs`.
+
+---
+
 ## P91. Parsing and merging of the full index take turns
 
 **Impact: Medium-High · Complexity: Medium-High**
@@ -119,6 +143,28 @@ reads the service configuration now runs there too. Profile a single-file
 
 **Where to look:** `src/docblock/` (type-alias tags), the alias handling in
 `src/parser/classes/`.
+
+---
+
+## P95. Interrupt receiver warm-up inside a file
+
+**Impact: Medium · Complexity: High**
+
+The background member-receiver warm-up checks its 30-second budget and the
+shutdown flag only between files. A single expensive scope walk can continue
+past that deadline. Carry cancellation into scope construction and receiver
+resolution, and stop without recording partial receiver coverage as complete.
+
+Keep on-demand navigation available after an interrupted warm-up. Add tests
+that interrupt a multi-scope file, then request references and verify that all
+receivers are still found. Verify shutdown and deadline handling separately.
+This is the remaining cancellation deliverable from the nested array analysis
+investigation; it needs an explicit incomplete-result path through the walker
+and caches, beyond bounding the array joins themselves.
+
+**Where to look:** `src/backend/eager_population.rs`,
+`src/references/receivers.rs`, and
+`src/type_engine/variable/forward_walk/diagnostic_walk.rs`.
 
 ---
 

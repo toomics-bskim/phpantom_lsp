@@ -799,6 +799,9 @@ pub(super) fn simplify_empty_string_union(types: &mut Vec<PhpType>) {
 /// as PHPStan's `ConstantArrayTypeBuilder::ARRAY_COUNT_LIMIT`.
 const SHAPE_JOIN_VALUE_LIMIT: usize = 256;
 
+/// Keep small array joins on the allocation-free grouping path.
+pub(crate) const ARRAY_JOIN_GROUP_THRESHOLD: usize = 16;
+
 /// Fold the array shapes of a join into one `non-empty-array<K, V>` (or
 /// `non-empty-list<V>`) once they spell out more values between them than
 /// [`SHAPE_JOIN_VALUE_LIMIT`].
@@ -814,7 +817,10 @@ const SHAPE_JOIN_VALUE_LIMIT: usize = 256;
 ///
 /// A lone shape is left as it is, however large: it is one value spelled
 /// out in source, not a union that grows.
-pub(super) fn generalize_oversized_shapes(types: &mut Vec<PhpType>) {
+/// Returns whether any shape family was generalized, including nested ones.
+pub(super) fn generalize_oversized_shapes(types: &mut Vec<PhpType>) -> bool {
+    let nested_changed = generalize_array_value_groups(types);
+
     fn sealed_entries(ty: &PhpType) -> Option<&[ShapeEntry]> {
         if ty.as_unsealed_shape().is_some() {
             return None;
@@ -832,7 +838,7 @@ pub(super) fn generalize_oversized_shapes(types: &mut Vec<PhpType>) {
         value_count += entries.len();
     }
     if shape_count < 2 || value_count <= SHAPE_JOIN_VALUE_LIMIT {
-        return;
+        return nested_changed;
     }
 
     let mut keys = Vec::new();
@@ -878,6 +884,70 @@ pub(super) fn generalize_oversized_shapes(types: &mut Vec<PhpType>) {
         index - 1 == first || sealed_entries(ty).is_none()
     });
     types[first] = general;
+    true
+}
+
+/// Apply the shape-value budget through shared generic array layers.
+/// Branch joins can also contain scalars or shapes beside these arrays;
+/// only containers with the same kind and key type can share a value join.
+fn generalize_array_value_groups(types: &mut Vec<PhpType>) -> bool {
+    // Ordinary branch joins stay precise and do not allocate grouping maps.
+    if types.len() < ARRAY_JOIN_GROUP_THRESHOLD {
+        return false;
+    }
+    let mut groups: HashMap<(Atom, Option<&PhpType>), Vec<usize>> = HashMap::new();
+    for (index, ty) in types.iter().enumerate() {
+        let TypeKind::Generic(generic) = ty.raw_kind() else {
+            continue;
+        };
+        if !matches!(
+            generic.name.as_str(),
+            "array" | "non-empty-array" | "list" | "non-empty-list"
+        ) {
+            continue;
+        }
+        let key = match generic.args.as_slice() {
+            [_] => None,
+            [key, _] => Some(key),
+            _ => continue,
+        };
+        groups.entry((generic.name, key)).or_default().push(index);
+    }
+    let mut replacements = Vec::new();
+    for ((name, key), indices) in groups {
+        if indices.len() < 2 {
+            continue;
+        }
+        let mut values: Vec<_> = indices
+            .iter()
+            .map(|&index| {
+                let TypeKind::Generic(generic) = types[index].raw_kind() else {
+                    unreachable!()
+                };
+                generic.args.last().unwrap().clone()
+            })
+            .collect();
+        if generalize_oversized_shapes(&mut values) {
+            let value = PhpType::join_runtime_value_types(values);
+            let args = match key {
+                Some(key) => vec![key.clone(), value],
+                None => vec![value],
+            };
+            replacements.push((indices, PhpType::generic_atom(name, args)));
+        }
+    }
+    if replacements.is_empty() {
+        return false;
+    }
+    let mut keep = vec![true; types.len()];
+    for (indices, general) in replacements {
+        types[indices[0]] = general;
+        for index in indices.into_iter().skip(1) {
+            keep[index] = false;
+        }
+    }
+    crate::util::retain_by_mask(types, &keep);
+    true
 }
 
 /// Drop every `non-empty-` refinement whose unrefined base shares the

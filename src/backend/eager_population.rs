@@ -146,11 +146,13 @@ impl Backend {
                     return None;
                 }
                 let uri = &uris[index];
-                crate::util::catch_panic_unwind_safe("member_warmup", uri, None, || {
+                tracing::debug!(target: "phpantom_lsp::member_warmup", uri, thread = ?std::thread::current().id(), phase = "file_begin");
+                let walked = crate::util::catch_panic_unwind_safe("member_warmup", uri, None, || {
                     self.warm_member_receivers(uri)
                 })
-                .unwrap_or(false)
-                .then_some(())
+                .unwrap_or(false);
+                tracing::debug!(target: "phpantom_lsp::member_warmup", uri, thread = ?std::thread::current().id(), phase = "file_end", walked);
+                walked.then_some(())
             },
         )
         .len();

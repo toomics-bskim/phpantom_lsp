@@ -398,6 +398,7 @@ impl Backend {
             subject.starts_with('$') && !subject.starts_with("$this")
         });
         if needs_variable_scopes {
+            tracing::debug!(target: "phpantom_lsp::member_warmup", uri, thread = ?std::thread::current().id(), phase = "scopes_begin");
             let class_loaders = self.resolved_class_loaders(&file_ctx);
             let class_loaders = class_loaders.as_dyn_resolved();
             let source_class_loaders = self.class_loaders(&file_ctx);
@@ -450,6 +451,7 @@ impl Backend {
                     );
                 }
             }
+            tracing::debug!(target: "phpantom_lsp::member_warmup", uri, thread = ?std::thread::current().id(), phase = "scopes_end");
         }
         // Whether the snapshots now in the cache are this file's own
         // targeted walk.  A targeted walk always leaves the coverage
@@ -517,6 +519,7 @@ impl Backend {
                 else {
                     return None;
                 };
+                tracing::trace!(target: "phpantom_lsp::member_warmup", uri, thread = ?std::thread::current().id(), offset = span.start, phase = "receiver_begin");
                 let targets: Vec<Atom> = self
                     .member_receiver_fqns(
                         AccessReceiver {
@@ -532,6 +535,7 @@ impl Backend {
                     .into_iter()
                     .map(|target| crate::atom::atom(&target))
                     .collect();
+                tracing::trace!(target: "phpantom_lsp::member_warmup", uri, thread = ?std::thread::current().id(), offset = span.start, phase = "receiver_end");
                 if targets.is_empty() {
                     return None;
                 }

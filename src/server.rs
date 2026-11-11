@@ -146,8 +146,8 @@ impl Backend {
     async fn run_with_progress<R, F>(
         &self,
         name: &'static str,
-        title: &str,
-        message: &str,
+        title: &'static str,
+        message: &'static str,
         token: Option<ProgressToken>,
         body: F,
     ) -> Option<R>
@@ -155,32 +155,47 @@ impl Backend {
         R: Send + 'static,
         F: FnOnce(&Backend) -> R + Send + 'static,
     {
-        let token = match token {
-            Some(t) => Some(t),
-            None => self.progress_create(name).await,
-        };
+        let backend = self.clone_for_blocking();
+        // Cancellation drops the request future while its blocking work keeps
+        // running. Keep the entire progress lifetime with that work, including
+        // creation and the final poller flush, so every begin has an end.
+        match tokio::spawn(async move {
+            let token = match token {
+                Some(t) => Some(t),
+                None => backend.progress_create(name).await,
+            };
 
-        if let Some(ref tok) = token {
-            self.progress_begin(tok, title, Some(message.to_string()))
-                .await;
+            if let Some(ref tok) = token {
+                backend
+                    .progress_begin(tok, title, Some(message.to_string()))
+                    .await;
+            }
+
+            let mut worker = backend.clone_for_blocking();
+            let poller = token.as_ref().map(|tok| {
+                let state = crate::progress::ScanProgress::new();
+                worker.request_progress = Some(Arc::clone(&state));
+                backend.spawn_progress_poller(tok.clone(), state)
+            });
+            let result = run_blocking_cancel_safe(name, move || body(&worker)).await;
+
+            if let Some(poller) = poller {
+                poller.finish().await;
+            }
+            if let Some(ref tok) = token {
+                backend.progress_end(tok, Some("Done".to_string())).await;
+            }
+
+            result
+        })
+        .await
+        {
+            Ok(result) => result,
+            Err(err) => {
+                tracing::error!("PHPantom: {name} progress task failed: {err}");
+                None
+            }
         }
-
-        let mut backend = self.clone_for_blocking();
-        let poller = token.as_ref().map(|tok| {
-            let state = crate::progress::ScanProgress::new();
-            backend.request_progress = Some(Arc::clone(&state));
-            self.spawn_progress_poller(tok.clone(), state)
-        });
-        let result = run_blocking_cancel_safe(name, move || body(&backend)).await;
-
-        if let Some(poller) = poller {
-            poller.finish().await;
-        }
-        if let Some(ref tok) = token {
-            self.progress_end(tok, Some("Done".to_string())).await;
-        }
-
-        result
     }
 
     /// Format a document, or with `range` only the lines it selects.
@@ -1309,6 +1324,9 @@ fn wrap_locations(mut locations: Vec<Location>) -> Option<Definition> {
         _ => Some(Definition::LocationList(locations)),
     }
 }
+
+#[cfg(test)]
+mod progress_tests;
 
 #[cfg(test)]
 mod tests {

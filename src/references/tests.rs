@@ -1267,3 +1267,46 @@ function run(): void {
         .collect();
     assert_eq!(targets, ["Box"]);
 }
+
+#[test]
+fn warming_nested_dynamic_array_writes_keeps_receiver_coverage() {
+    let uri = crate::util::path_to_uri(&std::env::temp_dir().join("nested-array-warmup.php"));
+    let mut source = String::from(
+        "<?php\nfunction buildRows($options) {\n\
+         foreach ($rows[$group]['items'] as $key => $row) {\n\
+         foreach ($row as $field => $value) {\n",
+    );
+    for index in 0..12 {
+        if index != 0 {
+            source.push_str("else ");
+        }
+        source.push_str(&format!(
+            "if ($field === 'f{index}') {{ $rows[$group]['items'][$key]['f{index}'] = $values['f{index}']; }}\n"
+        ));
+    }
+    source.push_str(
+        "}\nif ($options) {\n\
+         $rows[$group]['items'][$key]['x'] = $values['x'];\n\
+         $rows[$group]['items'][$key]['y'] = $values['y'];\n\
+         $rows[$group]['items'][$key]['z'] = $values['z'];\n\
+         }\n}\n}\n\
+         class Service { function save() {} }\n\
+         function useService(Service $service) { $service->save(); }\n",
+    );
+    let backend = Backend::new_test();
+    parse_file(&backend, &uri, &source);
+    assert!(backend.warm_member_receivers(&uri));
+    let map = symbol_map_of(&backend, &uri);
+    let entry = backend.resolved_member_file(&uri, &map).unwrap();
+    let save = crate::atom::atom("save");
+    assert!(entry.covers([save]));
+    let service = crate::references::member_scope::MemberScope::exact(
+        std::iter::once("Service".to_string()).collect(),
+    );
+    assert!(!backend.member_accesses_ruled_out(&uri, &map, &[(save, &service)]));
+    let other = crate::references::member_scope::MemberScope::exact(
+        std::iter::once("Other".to_string()).collect(),
+    );
+    assert!(backend.member_accesses_ruled_out(&uri, &map, &[(save, &other)]));
+    assert!(!backend.warm_member_receivers(&uri));
+}
