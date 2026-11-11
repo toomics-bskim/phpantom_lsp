@@ -90,8 +90,8 @@ impl Backend {
     /// index is refreshed only far enough to parse a file created without
     /// a watcher notification: files already indexed are left alone, and a
     /// refresh that finds nothing new does not re-infer every Blade
-    /// template. That re-inference is what made a local rename cost as
-    /// much as the index itself, and the next rename cost the same.
+    /// template. Overlapping requests share the pass that finishes while
+    /// they wait; a later request still checks for unreported files.
     ///
     /// Called before reading the file the request is about, because the
     /// initial pass can rewrite a Blade template's virtual PHP.
@@ -223,11 +223,21 @@ impl Backend {
             return;
         }
 
+        let completed_before = self
+            .workspace_index
+            .completed_passes
+            .load(Ordering::Acquire);
         let _workspace_index_guard = self.acquire_workspace_index_lock(progress);
 
-        // Another request may have completed the index while this one was
-        // waiting for the single-flight lock.
-        if !refresh_completed && self.workspace_index.indexed.load(Ordering::Acquire) {
+        // Waiting requests share a completed pass, even if it found no new
+        // files. A later request snapshots the new count and still refreshes.
+        if (!refresh_completed && self.workspace_index.indexed.load(Ordering::Acquire))
+            || self
+                .workspace_index
+                .completed_passes
+                .load(Ordering::Acquire)
+                != completed_before
+        {
             if let Some(progress) = progress {
                 progress(100, "Workspace index ready".to_string());
             }
@@ -489,6 +499,9 @@ impl Backend {
         }
         self.report_workspace_index_progress(progress, 100, "Workspace index ready");
         *self.workspace_index.status.lock() = None;
+        self.workspace_index
+            .completed_passes
+            .fetch_add(1, Ordering::Release);
         tracing::info!("ensure_workspace_indexed: total time {:?}", start.elapsed());
     }
 

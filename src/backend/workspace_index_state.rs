@@ -1,6 +1,6 @@
 //! How far the workspace index has got.
 
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64};
 
 use parking_lot::Mutex;
 
@@ -19,6 +19,10 @@ pub(crate) struct WorkspaceIndexState {
     /// Serializes whole-workspace indexing so a foreground request does not
     /// duplicate the background full-index parse.
     pub(crate) lock: Mutex<()>,
+    /// Completed indexing passes, including refreshes that found no new files.
+    /// A caller snapshots this before taking `lock` and reuses a pass that
+    /// finished while it waited. Incremented only after all work is published.
+    pub(crate) completed_passes: AtomicU64,
     /// Prevents duplicate background full-index tasks when initialization and
     /// a request both race to parse the whole workspace.
     pub(crate) full_in_progress: AtomicBool,

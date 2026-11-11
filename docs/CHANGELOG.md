@@ -712,6 +712,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Performance and stability
 
+- **Concurrent navigation searches share workspace discovery.** Bursts of Find References and Go to Implementation requests no longer repeat the same project scan. Later searches still discover newly added files when the editor has not reported them.
 - **Cancelled searches clear their progress indicators.** Find References, Go to Implementation, and type hierarchy searches no longer leave a background task spinning after the editor cancels the request and its work finishes.
 - **Background analysis finishes on nested array writes.** Large functions that update arrays through dynamic keys no longer keep a CPU core busy after indexing.
 - **`analyze` no longer stalls on large projects.** Analyzing a large framework codebase, such as `laravel/framework` itself, could sit idle for 10 to 30 seconds before reporting anything. It now takes about a second there. Contributed by @stubbedev.

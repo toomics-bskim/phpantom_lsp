@@ -20,30 +20,6 @@ against that bar.
 
 ---
 
-## P93. Concurrent navigation requests repeat the workspace walk
-
-**Impact: High · Complexity: Medium**
-
-OpenIDEA sends reference and implementation requests automatically for
-declarations in view. Each request refreshes the completed workspace index
-under the same lock, so a burst queues one directory walk per request.
-On Windows, a legacy project with about 7,800 PHP files took 25.4 seconds
-to answer 20 concurrent reference requests after initial indexing finished;
-each request returned the same 424 locations.
-
-Coalesce overlapping refreshes while preserving discovery of files created
-without watcher notifications. A later explicit request must still discover
-such a file, as covered by
-`request_refresh_discovers_a_file_added_after_indexing`. Verify reference
-results and cancellation while benchmarking the burst, rather than hiding
-progress or skipping workspace data.
-
-**Where to look:** `ensure_workspace_indexed_with_progress_mode` in
-`src/indexing/preload.rs`, `src/backend/workspace_index_state.rs`, and the
-navigation handlers in `src/server.rs`.
-
----
-
 ## P91. Parsing and merging of the full index take turns
 
 **Impact: Medium-High · Complexity: Medium-High**

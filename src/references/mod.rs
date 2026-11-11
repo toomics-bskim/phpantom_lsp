@@ -589,3 +589,6 @@ pub(crate) fn push_location(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod workspace_index_tests;

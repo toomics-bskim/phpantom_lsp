@@ -40,7 +40,6 @@ contributor even though it's short.
 | #   | Item                                                                                                                                                            | Impact      | Complexity  |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ----------- |
 |     | Clear [refactoring gate](todo/refactor.md)                                                                                                                      | —           | —           |
-| P93 | [Concurrent navigation requests repeat the workspace walk](todo/performance.md#p93-concurrent-navigation-requests-repeat-the-workspace-walk) | High | Medium |
 | P95 | [Interrupt receiver warm-up inside a file](todo/performance.md#p95-interrupt-receiver-warm-up-inside-a-file) | Medium | High |
 | T61 | [A regression that changes where a call resolves goes unnoticed](todo/type-inference.md#t61-a-regression-that-changes-where-a-call-resolves-goes-unnoticed) | Medium      | Medium      |
 | P92 | [Startup's file walks and resource indexing run on one core](todo/performance.md#p92-startups-file-walks-and-resource-indexing-run-on-one-core) | Medium | Medium |
