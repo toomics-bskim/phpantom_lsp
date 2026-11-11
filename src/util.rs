@@ -24,7 +24,8 @@ use std::path::{Path, PathBuf};
 use tower_lsp_server::gen_lsp_types::*;
 
 /// Run `f` inside [`panic::catch_unwind`], logging and swallowing any
-/// panic.
+/// unexpected panic. Cooperative analysis cancellation passes through to its
+/// owning operation instead of becoming a default result.
 ///
 /// Returns `Some(value)` on success and `None` on panic.  The error
 /// message includes `label` (the operation name, e.g. `"hover"` or
@@ -49,7 +50,8 @@ pub(crate) fn catch_panic<T>(
 ) -> Option<T> {
     match panic::catch_unwind(f) {
         Ok(value) => Some(value),
-        Err(_) => {
+        Err(payload) => {
+            crate::cancellation::rethrow_if_cancelled(payload.as_ref());
             if let Some(pos) = position {
                 tracing::error!(
                     "PHPantom: panic during {} at {}:{}:{}",

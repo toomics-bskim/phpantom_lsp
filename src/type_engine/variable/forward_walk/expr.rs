@@ -140,6 +140,7 @@ impl<'b> ExprWalk<'b> {
         scope: &mut ScopeState,
         ctx: &ForwardWalkCtx<'_>,
     ) -> ExprResult {
+        crate::cancellation::checkpoint();
         record_node_scope(expr.span().start.offset, scope);
         if let Some(cursor_scope) = ctx.cursor_scope {
             cursor_scope.reached(expr, scope, ctx.cursor_offset);
@@ -415,6 +416,7 @@ impl<'b> ExprWalk<'b> {
         ctx: &ForwardWalkCtx<'_>,
         pinned: &[String],
     ) -> Condition<'b> {
+        crate::cancellation::checkpoint();
         record_node_scope(expr.span().start.offset, scope);
         if let Some(cursor_scope) = ctx.cursor_scope {
             cursor_scope.reached(expr, scope, ctx.cursor_offset);

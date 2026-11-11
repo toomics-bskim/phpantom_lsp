@@ -16,6 +16,7 @@ pub(crate) fn process_statement<'b>(
     scope: &mut ScopeState,
     ctx: &ForwardWalkCtx<'_>,
 ) {
+    crate::cancellation::checkpoint();
     // An expression statement runs its own `@var` handling, which has
     // extra rules (the LHS is left alone while the cursor sits in the
     // RHS, a scalar RHS blocks a class override).  Every other statement

@@ -592,3 +592,6 @@ mod tests;
 
 #[cfg(test)]
 mod workspace_index_tests;
+
+#[cfg(test)]
+mod warmup_cancellation_tests;

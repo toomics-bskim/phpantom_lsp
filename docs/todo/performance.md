@@ -122,28 +122,6 @@ reads the service configuration now runs there too. Profile a single-file
 
 ---
 
-## P95. Interrupt receiver warm-up inside a file
-
-**Impact: Medium · Complexity: High**
-
-The background member-receiver warm-up checks its 30-second budget and the
-shutdown flag only between files. A single expensive scope walk can continue
-past that deadline. Carry cancellation into scope construction and receiver
-resolution, and stop without recording partial receiver coverage as complete.
-
-Keep on-demand navigation available after an interrupted warm-up. Add tests
-that interrupt a multi-scope file, then request references and verify that all
-receivers are still found. Verify shutdown and deadline handling separately.
-This is the remaining cancellation deliverable from the nested array analysis
-investigation; it needs an explicit incomplete-result path through the walker
-and caches, beyond bounding the array joins themselves.
-
-**Where to look:** `src/backend/eager_population.rs`,
-`src/references/receivers.rs`, and
-`src/type_engine/variable/forward_walk/diagnostic_walk.rs`.
-
----
-
 ## P87. A run of conditional appends to one array is polynomial in its length
 
 **Impact: Medium · Complexity: High**

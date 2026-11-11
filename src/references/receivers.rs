@@ -23,6 +23,11 @@ use crate::symbol_map::SymbolMap;
 use crate::symbol_map::{DocblockMemberRef, SelfStaticParentKind, SubjectText, SymbolKind};
 use crate::text_position::LineIndex;
 
+#[cfg(test)]
+thread_local! {
+    pub(super) static TEST_RESOLVED_RECEIVERS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// Whether a receiver of this text resolves without the file's content.
 ///
 /// [`resolve_subject_type`](crate::type_engine::subject_resolution::resolve_subject_type)
@@ -301,6 +306,7 @@ impl Backend {
         position: &dyn Fn(u32) -> Position,
         walk: ReceiverWalk<'_>,
     ) -> Arc<crate::reference_index::ResolvedMemberFile> {
+        crate::cancellation::checkpoint();
         // A whole-file walk is asked about every name the file accesses.  The
         // caller of the other arm already owns its list, so only this one has
         // a list to build.
@@ -508,6 +514,7 @@ impl Backend {
         let resolved = carried
             .into_iter()
             .chain(access_indices.into_iter().filter_map(|span_index| {
+                crate::cancellation::checkpoint();
                 let span = &symbol_map.spans[span_index];
                 let SymbolKind::MemberAccess {
                     subject_text,
@@ -536,6 +543,8 @@ impl Backend {
                     .map(|target| crate::atom::atom(&target))
                     .collect();
                 tracing::trace!(target: "phpantom_lsp::member_warmup", uri, thread = ?std::thread::current().id(), offset = span.start, phase = "receiver_end");
+                #[cfg(test)]
+                TEST_RESOLVED_RECEIVERS.with(|count| count.set(count.get() + 1));
                 if targets.is_empty() {
                     return None;
                 }
@@ -545,6 +554,7 @@ impl Backend {
             .collect();
         let mut deps = recording.consulted();
         deps.extend(carried_deps);
+        crate::cancellation::checkpoint();
         self.cache_resolved_member_file(uri, Arc::clone(symbol_map), covered, resolved, deps)
     }
 

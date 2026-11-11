@@ -712,6 +712,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Performance and stability
 
+- **Background preparation can stop inside large files.** Reference preparation now responds to shutdown and its time budget while analyzing a file. Later searches still finish any work it did not complete.
 - **Concurrent navigation searches share workspace discovery.** Bursts of Find References and Go to Implementation requests no longer repeat the same project scan. Later searches still discover newly added files when the editor has not reported them.
 - **Cancelled searches clear their progress indicators.** Find References, Go to Implementation, and type hierarchy searches no longer leave a background task spinning after the editor cancels the request and its work finishes.
 - **Background analysis finishes on nested array writes.** Large functions that update arrays through dynamic keys no longer keep a CPU core busy after indexing.

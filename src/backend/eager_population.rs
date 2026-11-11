@@ -21,6 +21,7 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use crate::Backend;
+use crate::cancellation::AnalysisCancellation;
 use crate::class_lookup::Fqn;
 
 /// How long the receiver warm-up may run before it stops where it is.
@@ -125,6 +126,10 @@ impl Backend {
         }
 
         let started = Instant::now();
+        let cancellation = std::sync::Arc::new(AnalysisCancellation::new(
+            std::sync::Arc::clone(&self.shutdown_flag),
+            started + RECEIVER_WARMUP_BUDGET,
+        ));
         // A quarter of the available cores, so interactive requests stay
         // responsive while the pass runs and the pass keeps its memory
         // down.  Each worker holds a parse cache and a whole file's scope
@@ -140,17 +145,22 @@ impl Backend {
             uris.len(),
             Some(workers),
             |_, index| {
-                if self.shutdown_flag.load(Ordering::Acquire)
-                    || started.elapsed() > RECEIVER_WARMUP_BUDGET
-                {
+                if cancellation.reason().is_some() {
                     return None;
                 }
                 let uri = &uris[index];
                 tracing::debug!(target: "phpantom_lsp::member_warmup", uri, thread = ?std::thread::current().id(), phase = "file_begin");
                 let walked = crate::util::catch_panic_unwind_safe("member_warmup", uri, None, || {
-                    self.warm_member_receivers(uri)
+                    cancellation.run(|| self.warm_member_receivers(uri))
                 })
-                .unwrap_or(false);
+                .unwrap_or(Ok(false));
+                let walked = match walked {
+                    Ok(walked) => walked,
+                    Err(reason) => {
+                        tracing::debug!(target: "phpantom_lsp::member_warmup", uri, ?reason, phase = "file_interrupted");
+                        false
+                    }
+                };
                 tracing::debug!(target: "phpantom_lsp::member_warmup", uri, thread = ?std::thread::current().id(), phase = "file_end", walked);
                 walked.then_some(())
             },

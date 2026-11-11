@@ -253,6 +253,7 @@ fn walk_top_level_block<'b>(
     let last_target = diag_ctx.last_target();
 
     for stmt in statements {
+        crate::cancellation::checkpoint();
         match stmt {
             Statement::Namespace(ns) => {
                 // Recurse into the namespace body on the same scope.  The
@@ -376,6 +377,7 @@ pub(crate) fn walk_class_member_body<'b>(
     use mago_syntax::cst::class_like::member::ClassLikeMember;
     use mago_syntax::cst::class_like::method::MethodBody;
 
+    crate::cancellation::checkpoint();
     if !diag_ctx.wants(member.span()) {
         return;
     }
@@ -581,6 +583,7 @@ pub(crate) fn seed_and_walk_function_body<'b>(
     #[cfg(test)]
     TEST_BODY_WALKS.with(|count| count.set(count.get() + 1));
 
+    crate::cancellation::checkpoint();
     let ctx = &ctx.for_declaration(fn_span_start);
     tracing::trace!(target: "phpantom_lsp::scope_walk", uri = ctx.file.uri, thread = ?std::thread::current().id(), offset = fn_span_start, phase = "body_begin");
     let body: Vec<&Statement<'_>> = body_statements.collect();

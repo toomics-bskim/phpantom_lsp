@@ -178,6 +178,8 @@ To investigate CPU activity after indexing, set
 `RUST_LOG=info,phpantom_lsp::member_warmup=debug`. This records each
 background receiver warm-up file and its scope-building phase. Match
 begin/end events by thread and URI to find work that has not returned.
+`file_interrupted` records a warm-up stopped by its deadline or server shutdown;
+later searches can still resolve that file on demand.
 For finer detail, use
 `RUST_LOG=info,phpantom_lsp::member_warmup=trace,phpantom_lsp::scope_walk=trace`
 to include member-access and function-body byte offsets. These logs contain

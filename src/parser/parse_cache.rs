@@ -375,7 +375,8 @@ pub(crate) fn with_parse_version<'a>(
 /// `parse_file_content`, and wrapping the whole thing in
 /// `catch_unwind` so that a parser panic doesn't crash the LSP
 /// server.  On panic the error is logged (using `method_name` for
-/// context) and `T::default()` is returned.
+/// context) and `T::default()` is returned. Cooperative analysis cancellation
+/// propagates to its owner instead of producing that fallback.
 ///
 /// When the thread-local parse cache is active (see
 /// [`with_parse_cache`]) and holds `content`, the previously parsed
@@ -385,6 +386,7 @@ pub(crate) fn with_parsed_program<T: Default>(
     method_name: &str,
     f: impl FnOnce(&Program<'_>, &str) -> T,
 ) -> T {
+    crate::cancellation::checkpoint();
     // ── Fast path: check the thread-local cache ─────────────────
     // The borrow ends before `f` runs, so `f` is free to register more
     // files or parse others through the cache.
@@ -406,7 +408,8 @@ pub(crate) fn with_parsed_program<T: Default>(
 
     match result {
         Ok(value) => value,
-        Err(_) => {
+        Err(payload) => {
+            crate::cancellation::rethrow_if_cancelled(payload.as_ref());
             tracing::error!("PHPantom: parser panicked in {}", method_name);
             T::default()
         }
@@ -420,6 +423,7 @@ pub(crate) fn with_parsed_program<T: Default>(
 /// answered with `T::default()` instead of taking the LSP server down, and
 /// the file is evicted so the next call re-parses it rather than reading a
 /// half-built entry.
+/// Cancellation propagates without evicting a successfully parsed file.
 fn with_cached_file<T: Default>(
     file: Rc<CachedFile>,
     method_name: &str,
@@ -427,7 +431,8 @@ fn with_cached_file<T: Default>(
 ) -> T {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&file))) {
         Ok(value) => value,
-        Err(_) => {
+        Err(payload) => {
+            crate::cancellation::rethrow_if_cancelled(payload.as_ref());
             PARSE_CACHE.with(|cell| {
                 if let Some(cache) = cell.borrow_mut().as_mut() {
                     cache.evict(&file);
