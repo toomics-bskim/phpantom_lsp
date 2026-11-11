@@ -45,25 +45,7 @@ No outstanding items.
 
 ## Array types
 
-### B1. Line comments in a multiline PHPDoc type swallow later fields
-
-**Impact: Medium-High · Complexity: Medium**
-
-`@psalm-type Config = array{` with `name: string, // description` on one
-line and `enabled: bool` on the next parses correctly in the PHPDoc CST,
-but the stored alias becomes a raw, unstructured type. `type_text` folds
-the lines together before `PhpType::parse` reads the type again, so the
-line comment consumes the remaining fields and closing brace. Generated
-Symfony configuration aliases commonly contain these comments.
-
-Preserve the comment boundaries or consume the parsed type without
-reconstructing an invalid single-line string. Cover aliases, return and
-parameter types, quoted `//` literals, CRLF, and source spans used by
-navigation. Do not suppress downstream diagnostics or discard fields.
-
-**Where to look:** `src/docblock/parser.rs` (`type_text`),
-`src/docblock/templates.rs` (`extract_type_aliases_from_info`), and
-`src/php_type/parse.rs`.
+No outstanding items.
 
 ## Laravel
 

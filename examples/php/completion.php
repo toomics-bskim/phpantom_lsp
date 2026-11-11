@@ -3075,7 +3075,11 @@ class CollectionForeachDemo
 // ── Type Aliases (@phpstan-type / @phpstan-import-type) ─────────────────────
 
 /**
- * @phpstan-type UserData array{name: string, email: string, pen: Scaffolding\Pen}
+ * @phpstan-type UserData array{
+ *     name: string, // Display name
+ *     email: string, // Contact address
+ *     pen: Scaffolding\Pen, // A value with navigable members
+ * }
  * @phpstan-type StatusInfo array{code: int, label: string, owner: Scaffolding\User}
  * @phpstan-type UserList array<int, Profile>
  */
@@ -3084,6 +3088,7 @@ class TypeAliasDemo
     public function demo(): void
     {
         $data = $this->getUserData();
+        // Try: array keys and Pen members still resolve after inline PHPDoc comments.
         $data['name'];                    // @phpstan-type → array shape key completion
         $data['pen']->write();            // object value → method completion
 

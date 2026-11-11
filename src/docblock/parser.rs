@@ -35,7 +35,7 @@ use mago_phpdoc_syntax::PHPDocParser;
 use mago_phpdoc_syntax::cst::r#type::Type;
 use mago_phpdoc_syntax::cst::{
     AssertPattern, Document, Element, MethodTagValue, TagValue,
-    TemplateTagValue as CstTemplateTagValue,
+    TemplateTagValue as CstTemplateTagValue, Trivia, TriviaKind,
 };
 use mago_span::{HasSpan, Position, Span};
 
@@ -429,7 +429,12 @@ fn collect_tags(document: &Document<'_>, docblock: &str, base_offset: u32) -> Do
                     kind: tag_kind(tag),
                     vendor: tag.vendor,
                     description: source_text(docblock, base_offset, value_span),
-                    value: tag_value_info(&tag.value, docblock, base_offset),
+                    value: tag_value_info(
+                        &tag.value,
+                        docblock,
+                        base_offset,
+                        document.trivia.as_slice(),
+                    ),
                     span: tag.span(),
                     description_span: value_span,
                 });
@@ -459,7 +464,12 @@ fn collect_tags(document: &Document<'_>, docblock: &str, base_offset: u32) -> Do
 /// and normalised the way a PHPDoc reader would (continuation `*` prefixes
 /// dropped, line breaks folded away), so a multi-line `array{…}` shape comes
 /// back as one parseable type string.
-fn tag_value_info(value: &TagValue<'_>, docblock: &str, base_offset: u32) -> TagValueInfo {
+fn tag_value_info(
+    value: &TagValue<'_>,
+    docblock: &str,
+    base_offset: u32,
+    trivia: &[Trivia<'_>],
+) -> TagValueInfo {
     /// A type plus a variable — the shape most tag values share.
     macro_rules! typed {
         ($type_text:expr, $variable:expr, $description:expr $(,)?) => {
@@ -472,7 +482,7 @@ fn tag_value_info(value: &TagValue<'_>, docblock: &str, base_offset: u32) -> Tag
         };
     }
 
-    let ty = |t: &Type<'_>| Some(type_text(docblock, base_offset, t.span()));
+    let ty = |t: &Type<'_>| Some(type_text(docblock, base_offset, t.span(), trivia));
 
     match value {
         TagValue::Param(value) => TagValueInfo::Typed(TypedTagValue {
@@ -613,11 +623,14 @@ fn tag_value_info(value: &TagValue<'_>, docblock: &str, base_offset: u32) -> Tag
                 .map(|d| source_text(docblock, base_offset, d.span)),
         ),
         TagValue::Template(value) => {
-            TagValueInfo::Template(template_tag_value(value, docblock, base_offset))
+            TagValueInfo::Template(template_tag_value(value, docblock, base_offset, trivia))
         }
-        TagValue::Method(value) => {
-            TagValueInfo::Method(Box::new(method_tag_info(value, docblock, base_offset)))
-        }
+        TagValue::Method(value) => TagValueInfo::Method(Box::new(method_tag_info(
+            value,
+            docblock,
+            base_offset,
+            trivia,
+        ))),
         TagValue::Assert(value)
         | TagValue::AssertIfTrue(value)
         | TagValue::AssertIfFalse(value) => TagValueInfo::Assert(AssertTagInfo {
@@ -631,7 +644,7 @@ fn tag_value_info(value: &TagValue<'_>, docblock: &str, base_offset: u32) -> Tag
         }),
         TagValue::TypeAlias(value) => TagValueInfo::TypeAlias(TypeAliasTagInfo {
             alias: crate::atom::bytes_to_str(value.alias.value).to_owned(),
-            definition: type_text(docblock, base_offset, value.r#type.span()),
+            definition: type_text(docblock, base_offset, value.r#type.span(), trivia),
         }),
         TagValue::TypeAliasImport(value) => TagValueInfo::TypeAliasImport(TypeAliasImportTagInfo {
             imported: crate::atom::bytes_to_str(value.imported_alias.value).to_owned(),
@@ -651,33 +664,39 @@ fn template_tag_value(
     value: &CstTemplateTagValue<'_>,
     docblock: &str,
     base_offset: u32,
+    trivia: &[Trivia<'_>],
 ) -> TemplateTagValue {
     TemplateTagValue {
         name: crate::atom::bytes_to_str(value.name.value).to_owned(),
         bound: value
             .bound
-            .map(|bound| type_text(docblock, base_offset, bound.r#type.span())),
+            .map(|bound| type_text(docblock, base_offset, bound.r#type.span(), trivia)),
         default: value
             .default
-            .map(|default| type_text(docblock, base_offset, default.r#type.span())),
+            .map(|default| type_text(docblock, base_offset, default.r#type.span(), trivia)),
     }
 }
 
 /// Intern a `@method` declaration, including its inline template list and
 /// parameter list.
-fn method_tag_info(value: &MethodTagValue<'_>, docblock: &str, base_offset: u32) -> MethodTagInfo {
+fn method_tag_info(
+    value: &MethodTagValue<'_>,
+    docblock: &str,
+    base_offset: u32,
+    trivia: &[Trivia<'_>],
+) -> MethodTagInfo {
     MethodTagInfo {
         name: crate::atom::bytes_to_str(value.name.value).to_owned(),
         is_static: value.is_static(),
         return_type: value
             .return_type
-            .map(|t| type_text(docblock, base_offset, t.span())),
+            .map(|t| type_text(docblock, base_offset, t.span(), trivia)),
         templates: value
             .templates
             .map(|list| {
                 list.entries
                     .iter()
-                    .map(|entry| template_tag_value(&entry.template, docblock, base_offset))
+                    .map(|entry| template_tag_value(&entry.template, docblock, base_offset, trivia))
                     .collect()
             })
             .unwrap_or_default(),
@@ -689,7 +708,7 @@ fn method_tag_info(value: &MethodTagValue<'_>, docblock: &str, base_offset: u32)
                 name: variable_text(param.parameter.value),
                 type_text: param
                     .r#type
-                    .map(|t| type_text(docblock, base_offset, t.span())),
+                    .map(|t| type_text(docblock, base_offset, t.span(), trivia)),
                 variadic: param.is_variadic(),
                 optional: param.is_optional(),
                 default_text: param
@@ -710,11 +729,49 @@ fn variable_text(value: &[u8]) -> String {
 
 /// Slice a type out of the docblock and fold it onto one line.
 ///
-/// A type written across several lines carries the `*` continuation prefix
-/// and the source indentation; both have to go before the string can be
-/// handed to the type parser.
-pub(crate) fn type_text(docblock: &str, base_offset: u32, span: Span) -> String {
-    let raw = source_text(docblock, base_offset, span);
+/// Remove the grammar's line comments before folding newlines, otherwise
+/// `//` consumes the rest of a multiline type when it is parsed again.
+/// Quoted literals and the original spans remain untouched.
+pub(crate) fn type_text(
+    docblock: &str,
+    base_offset: u32,
+    span: Span,
+    trivia: &[Trivia<'_>],
+) -> String {
+    let start = span.start.offset.saturating_sub(base_offset) as usize;
+    let end = (span.end.offset.saturating_sub(base_offset) as usize).min(docblock.len());
+    let Some(raw) = docblock.get(start..end) else {
+        return String::new();
+    };
+    let mut cleaned = None;
+    let mut cursor = start;
+    if raw.contains("//") {
+        // Trivia is in source order. Start at this type rather than rescanning
+        // all earlier aliases in a generated configuration docblock.
+        let first = trivia.partition_point(|item| item.span.end.offset <= span.start.offset);
+        for item in trivia[first..]
+            .iter()
+            .take_while(|item| item.span.start.offset < span.end.offset)
+        {
+            if item.kind == TriviaKind::LineComment {
+                let comment_start =
+                    (item.span.start.offset.saturating_sub(base_offset) as usize).max(start);
+                let comment_end =
+                    (item.span.end.offset.saturating_sub(base_offset) as usize).min(end);
+                let out = cleaned.get_or_insert_with(|| String::with_capacity(raw.len()));
+                out.push_str(&docblock[cursor..comment_start]);
+                cursor = comment_end;
+            }
+        }
+    }
+    let raw = match cleaned {
+        Some(mut out) => {
+            out.push_str(&docblock[cursor..end]);
+            Cow::Owned(out)
+        }
+        None => Cow::Borrowed(raw),
+    };
+    let raw = strip_line_prefixes(&raw);
     if raw.contains('\n') {
         collapse_newlines(&raw)
     } else {

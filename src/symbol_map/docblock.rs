@@ -17,7 +17,8 @@ use mago_database::file::FileId;
 use mago_phpdoc_syntax::cst::r#type as type_ast;
 use mago_phpdoc_syntax::cst::{
     AssertPattern, Element, MethodTagValue, PropertyTagValue, Tag, TagValue,
-    TemplateTagValue as CstTemplateTagValue, TemplateTagValueVariance, Text, TextSegment, Variable,
+    TemplateTagValue as CstTemplateTagValue, TemplateTagValueVariance, Text, TextSegment,
+    Trivia as DocblockTrivia, Variable,
 };
 use mago_span::{HasSpan, Position, Span};
 use mago_syntax::cst::*;
@@ -211,7 +212,13 @@ pub(super) fn extract_docblock_symbols_covering(
     with_docblock_cst(docblock, docblock_span(docblock, base_offset), |document| {
         for element in document.elements.iter() {
             match element {
-                Element::Tag(tag) => emit_tag_symbols(tag, docblock, base_offset, &mut sink),
+                Element::Tag(tag) => emit_tag_symbols(
+                    tag,
+                    docblock,
+                    base_offset,
+                    document.trivia.as_slice(),
+                    &mut sink,
+                ),
                 // Free text ahead of the first tag, e.g. `Wraps {@see Foo}.`
                 Element::Text(text) => {
                     scan_text_for_inline_see(text, docblock, base_offset, sink.spans);
@@ -239,7 +246,13 @@ fn docblock_span(docblock: &str, base_offset: u32) -> Span {
 /// Tags the grammar could not parse at all yield nothing: their type text is
 /// not a type, so guessing at a class name from it would only produce a
 /// reference that resolves to nothing.
-fn emit_tag_symbols(tag: &Tag<'_>, docblock: &str, base_offset: u32, sink: &mut DocblockSink<'_>) {
+fn emit_tag_symbols(
+    tag: &Tag<'_>,
+    docblock: &str,
+    base_offset: u32,
+    trivia: &[DocblockTrivia<'_>],
+    sink: &mut DocblockSink<'_>,
+) {
     match &tag.value {
         // ── Tags that lead with a type ──────────────────────────────
         TagValue::Param(value) => {
@@ -292,11 +305,15 @@ fn emit_tag_symbols(tag: &Tag<'_>, docblock: &str, base_offset: u32, sink: &mut 
         }
 
         // ── Tags that declare a member or a template parameter ──────
-        TagValue::Method(value) => emit_method_tag_symbols(value, docblock, base_offset, sink),
+        TagValue::Method(value) => {
+            emit_method_tag_symbols(value, docblock, base_offset, trivia, sink)
+        }
         TagValue::Property(value)
         | TagValue::PropertyRead(value)
         | TagValue::PropertyWrite(value) => emit_property_tag_symbols(value, sink),
-        TagValue::Template(value) => emit_template_tag_symbols(value, docblock, base_offset, sink),
+        TagValue::Template(value) => {
+            emit_template_tag_symbols(value, docblock, base_offset, trivia, sink)
+        }
 
         // ── Tags the grammar keeps as free text ─────────────────────
         TagValue::Generic(text) => match tag_kind(tag) {
@@ -350,6 +367,7 @@ fn emit_method_tag_symbols(
     value: &MethodTagValue<'_>,
     docblock: &str,
     base_offset: u32,
+    trivia: &[DocblockTrivia<'_>],
     sink: &mut DocblockSink<'_>,
 ) {
     if let Some(return_type) = value.return_type {
@@ -374,7 +392,7 @@ fn emit_method_tag_symbols(
         let scope = value.span();
         for entry in templates.entries.iter() {
             let (name, name_offset, bound, variance) =
-                template_tag_value_parts(&entry.template, docblock, base_offset, sink);
+                template_tag_value_parts(&entry.template, docblock, base_offset, trivia, sink);
             sink.found.method_templates.push(TemplateParamDef {
                 name_offset,
                 name,
@@ -419,9 +437,10 @@ fn emit_template_tag_symbols(
     value: &CstTemplateTagValue<'_>,
     docblock: &str,
     base_offset: u32,
+    trivia: &[DocblockTrivia<'_>],
     sink: &mut DocblockSink<'_>,
 ) {
-    let parts = template_tag_value_parts(value, docblock, base_offset, sink);
+    let parts = template_tag_value_parts(value, docblock, base_offset, trivia, sink);
     sink.found.templates.push(parts);
 }
 
@@ -434,11 +453,17 @@ fn template_tag_value_parts(
     value: &CstTemplateTagValue<'_>,
     docblock: &str,
     base_offset: u32,
+    trivia: &[DocblockTrivia<'_>],
     sink: &mut DocblockSink<'_>,
 ) -> (String, u32, Option<PhpType>, TemplateVariance) {
     let bound = value.bound.map(|bound| {
         emit_type_symbols(bound.r#type, sink);
-        PhpType::parse(&type_text(docblock, base_offset, bound.r#type.span()))
+        PhpType::parse(&type_text(
+            docblock,
+            base_offset,
+            bound.r#type.span(),
+            trivia,
+        ))
     });
 
     let variance = match value.variance {

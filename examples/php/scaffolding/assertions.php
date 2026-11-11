@@ -1142,6 +1142,7 @@ function runDemoAssertions(): void
     $aliasDemo = new TypeAliasDemo();
     $userData = $aliasDemo->getUserData();
     assert(is_string($userData['name']), 'UserData["name"] must be string');
+    assert(is_string($userData['email']), 'UserData["email"] must be string');
     assert($userData['pen'] instanceof Scaffolding\Pen, 'UserData["pen"] must be Scaffolding\Pen');
 
     $statusInfo = $aliasDemo->getStatus();

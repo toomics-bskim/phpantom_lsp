@@ -3,6 +3,81 @@ use phpantom_lsp::Backend;
 use phpantom_lsp::Fqn;
 use tower_lsp_server::gen_lsp_types::*;
 
+#[tokio::test]
+async fn commented_shapes_complete_and_navigate_after_inline_comments() {
+    use crate::common::{definition_locations, position_after, position_of, response_labels};
+
+    let source = r#"<?php
+namespace { class Model { public function wrong(): void {} } }
+namespace Vendor { class Model { public function ping(): int { return 1; } } }
+namespace App {
+use Vendor\Model;
+/**
+ * @psalm-type Config = array{
+ *   label: string, // ignored Model name and unmatched < {
+ *   item: Model, // The object type must survive.
+ * }
+ */
+interface Provider {
+    /** @return Config */
+    public function config(): array;
+}
+function inspect(Provider $provider): void {
+    $data = $provider->config();
+    $data['item']->ping();
+}
+/**
+ * @param array{
+ *   label: string, // Display label
+ *   item: Model, // Imported class
+ * } $argument
+ */
+function consume(array $argument): void {
+    $argument['item']->ping();
+}
+}
+"#;
+    for newline in ["\n", "\r\n"] {
+        let backend = create_test_backend();
+        let source = source.replace('\n', newline);
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("commented_shapes.php");
+        std::fs::write(&file, &source).unwrap();
+        let uri = Uri::from_file_path(dunce::canonicalize(file).unwrap()).unwrap();
+        open_php(&backend, &uri, &source).await;
+
+        for variable in ["$data", "$argument"] {
+            let cursor = position_after(&source, &format!("{variable}['"));
+            let labels = response_labels(
+                completion_response(&backend, &uri, cursor.line, cursor.character, None).await,
+            );
+            assert!(labels.iter().any(|label| label == "label"), "{labels:?}");
+            assert!(labels.iter().any(|label| label == "item"), "{labels:?}");
+
+            let cursor = position_after(&source, &format!("{variable}['item']->pi"));
+            let targets = definition_locations(
+                goto_definition_at(&backend, &uri, cursor.line, cursor.character).await,
+            );
+            assert_eq!(targets.len(), 1, "{targets:?}");
+            assert_eq!(targets[0].uri, uri);
+            assert_eq!(
+                targets[0].range.start.line,
+                position_of(&source, "function ping").line
+            );
+        }
+
+        let cursor = position_after(&source, "item: Mo");
+        let targets = definition_locations(
+            goto_definition_at(&backend, &uri, cursor.line, cursor.character).await,
+        );
+        assert_eq!(targets.len(), 1, "{targets:?}");
+        assert_eq!(
+            targets[0].range.start.line,
+            position_of(&source, "namespace Vendor").line
+        );
+    }
+}
+
 // ─── Helper ─────────────────────────────────────────────────────────────────
 
 /// Extract completion filter_text names (falling back to label) from a

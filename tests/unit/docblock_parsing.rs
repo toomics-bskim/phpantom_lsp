@@ -8,6 +8,47 @@ use phpantom_lsp::docblock::*;
 use phpantom_lsp::php_type::{PhpType, TypeKind};
 use phpantom_lsp::types::*;
 
+#[test]
+fn commented_multiline_types_preserve_aliases_returns_and_parameters() {
+    let shape = r#"array{
+ *   url: 'https://example.test//path', // unmatched delimiters: { < (
+ *   pattern: '//literal', // "quoted" 설명
+ *   nested: array{
+ *     enabled?: bool, // Default: true
+ *     item: Model, // The next field must survive.
+ *   },
+ * }"#;
+    let expected = PhpType::parse(
+        "array{url: 'https://example.test//path', pattern: '//literal', nested: array{enabled?: bool, item: Model}}",
+    );
+    for newline in ["\n", "\r\n"] {
+        let shape = shape.replace('\n', newline);
+        for vendor in ["phpstan", "psalm"] {
+            let aliases = extract_type_aliases(&format!("/** @{vendor}-type Config = {shape} */"));
+            let Some(TypeAliasDef::Local(actual)) = aliases.get("Config") else {
+                panic!("Expected a local alias");
+            };
+            assert_eq!(actual, &expected);
+        }
+        assert_eq!(
+            extract_return_type(&format!("/** @return {shape} */")),
+            Some(expected.clone())
+        );
+        assert_eq!(
+            extract_var_type(&format!("/** @var {shape} $config */")),
+            Some(expected.clone())
+        );
+        assert_eq!(
+            extract_param_raw_type(&format!("/** @param {shape} $config */"), "$config"),
+            Some(expected.clone())
+        );
+        let templates = extract_template_params_full(&format!("/** @template T of {shape} */"));
+        assert_eq!(templates[0].1.as_ref(), Some(&expected));
+        let methods = extract_method_tags(&format!("/** @method {shape} config() */"));
+        assert_eq!(methods[0].return_type.as_ref(), Some(&expected));
+    }
+}
+
 // ─── @method tag extraction ─────────────────────────────────────────
 
 #[test]
