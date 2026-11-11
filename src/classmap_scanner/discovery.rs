@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use super::filters::{FollowedLinks, IndexFilters};
-use super::walk::{WalkOptions, walk_roots};
+use super::walk::{WalkOptions, collect_files_parallel, walk_roots};
 use super::{ScanResult, WorkspaceScanResult, read_for_scan, scan_content};
 use crate::progress::ScanProgress;
 
@@ -689,55 +689,64 @@ pub fn scan_drupal_directories(
     let mut php_files: Vec<(PathBuf, crate::ClassCompletionOrigin)> = Vec::new();
     let mut declaration_files = DrupalDeclarationFiles::default();
 
-    for rel in &drupal_dirs {
-        let dir = web_root.join(rel);
-        if !dir.exists() {
-            continue;
-        }
-
-        let filter_excludes = std::sync::Arc::clone(filters);
-        let walker = WalkBuilder::new(&dir)
-            // Gitignore is intentionally disabled — Drupal's .gitignore
-            // excludes web/core and web/modules/contrib which are the
-            // most critical directories to index.
-            .git_ignore(false)
-            .git_global(false)
-            .git_exclude(false)
-            .hidden(true) // still skip .git, .idea, etc.
-            .parents(true)
-            .ignore(false)
-            .filter_entry(move |entry| {
-                let is_dir = entry.file_type().is_some_and(|ft| ft.is_dir());
-                !filter_excludes.is_excluded_entry(entry.path(), is_dir)
-            })
-            .build();
-
-        for entry in walker.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
+    let roots: Vec<_> = drupal_dirs
+        .iter()
+        .map(|rel| web_root.join(rel))
+        .filter(|dir| dir.is_dir())
+        .collect();
+    let Some((first, rest)) = roots.split_first() else {
+        return (WorkspaceScanResult::default(), declaration_files);
+    };
+    let filter_excludes = std::sync::Arc::clone(filters);
+    let mut builder = WalkBuilder::new(first);
+    builder
+        // Gitignore is intentionally disabled — Drupal's .gitignore
+        // excludes web/core and web/modules/contrib which are the
+        // most critical directories to index.
+        .git_ignore(false)
+        .git_global(false)
+        .git_exclude(false)
+        .hidden(true) // still skip .git, .idea, etc.
+        .parents(true)
+        .ignore(false)
+        .filter_entry(move |entry| {
+            let is_dir = entry.file_type().is_some_and(|ft| ft.is_dir());
+            !filter_excludes.is_excluded_entry(entry.path(), is_dir)
+        });
+    for root in rest {
+        builder.add(root);
+    }
+    let mut files = collect_files_parallel(builder, |path| {
+        is_drupal_php_file(path)
+            || filters.is_php_file(path)
+            || crate::drupal::config::is_default_config_file(path, web_root)
+            || crate::drupal::config::is_schema_file(path, web_root)
+            || crate::drupal::is_declaration_file(path, web_root)
+            || crate::drupal::is_template_file(path, web_root)
+            || crate::drupal::services::is_test_services_file(path, web_root)
+    });
+    // Preserve root precedence for duplicate declarations, then path order
+    // within each root, independent of which discovery worker finishes first.
+    files.sort_by_key(|path| roots.iter().position(|root| path.starts_with(root)));
+    for path in files {
+        if is_drupal_php_file(&path) || filters.is_php_file(&path) {
+            if crate::drupal::service_providers::is_service_provider_file(&path, web_root) {
+                declaration_files.service_providers.push(path.clone());
             }
-            if is_drupal_php_file(path) || filters.is_php_file(path) {
-                if crate::drupal::service_providers::is_service_provider_file(path, web_root) {
-                    declaration_files.service_providers.push(path.to_path_buf());
-                }
-                php_files.push((path.to_path_buf(), crate::ClassCompletionOrigin::Project));
-                if crate::drupal::is_hook_php_file(path, web_root) {
-                    declaration_files.declarations.push(path.to_path_buf());
-                }
-            } else if crate::drupal::config::is_default_config_file(path, web_root) {
-                declaration_files.default_config.push(path.to_path_buf());
-            } else if crate::drupal::config::is_schema_file(path, web_root) {
-                declaration_files.config_schemas.push(path.to_path_buf());
-            } else if crate::drupal::is_declaration_file(path, web_root) {
-                declaration_files.declarations.push(path.to_path_buf());
-            } else if crate::drupal::is_template_file(path, web_root) {
-                declaration_files.templates.push(path.to_path_buf());
-            } else if crate::drupal::services::is_test_services_file(path, web_root) {
-                declaration_files
-                    .service_definitions
-                    .push(path.to_path_buf());
+            if crate::drupal::is_hook_php_file(&path, web_root) {
+                declaration_files.declarations.push(path.clone());
             }
+            php_files.push((path, crate::ClassCompletionOrigin::Project));
+        } else if crate::drupal::config::is_default_config_file(&path, web_root) {
+            declaration_files.default_config.push(path);
+        } else if crate::drupal::config::is_schema_file(&path, web_root) {
+            declaration_files.config_schemas.push(path);
+        } else if crate::drupal::is_declaration_file(&path, web_root) {
+            declaration_files.declarations.push(path);
+        } else if crate::drupal::is_template_file(&path, web_root) {
+            declaration_files.templates.push(path);
+        } else if crate::drupal::services::is_test_services_file(&path, web_root) {
+            declaration_files.service_definitions.push(path);
         }
     }
 

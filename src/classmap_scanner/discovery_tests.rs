@@ -397,6 +397,40 @@ fn drupal_php_file_rejects_no_extension() {
 // ── scan_drupal_directories ─────────────────────────────────────
 
 #[test]
+fn scan_drupal_directories_keeps_root_precedence_and_sorted_duplicates() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dunce::canonicalize(dir.path()).unwrap();
+    for (path, name) in [
+        ("profiles/a.php", "AcrossRoots"),
+        ("themes/z.php", "AcrossRoots"),
+        ("modules/z.php", "WithinRoot"),
+        ("modules/a.php", "WithinRoot"),
+        ("core/.hidden/a.php", "Hidden"),
+        ("modules/excluded/a.php", "Excluded"),
+    ] {
+        let path = root.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, format!("<?php class {name} {{}}\n")).unwrap();
+    }
+    std::fs::write(
+        root.join(".gitignore"),
+        "core/\nmodules/\nthemes/\nprofiles/\n",
+    )
+    .unwrap();
+    let filters = std::sync::Arc::new(IndexFilters::compile(
+        Some(&root),
+        &["excluded/".to_string()],
+        &[],
+    ));
+    for _ in 0..3 {
+        let (symbols, _) = scan_drupal_directories(&root, &filters, None);
+        assert_eq!(symbols.classmap.len(), 2);
+        assert_eq!(symbols.classmap["AcrossRoots"], root.join("themes/z.php"));
+        assert_eq!(symbols.classmap["WithinRoot"], root.join("modules/a.php"));
+    }
+}
+
+#[test]
 fn scan_drupal_directories_finds_php_and_module_files() {
     let dir = tempfile::tempdir().unwrap();
     let web_root = dir.path();

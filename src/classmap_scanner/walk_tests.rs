@@ -1,5 +1,61 @@
 use super::*;
 
+#[test]
+fn workspace_discovery_preserves_filters_and_orders_each_file_kind() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dunce::canonicalize(dir.path()).unwrap();
+    for path in [
+        ".git/HEAD",
+        ".hidden/secret.php",
+        "ignored/a.php",
+        "vendor/pkg/a.php",
+        "excluded/a.yaml",
+        "nested/drop.php",
+        "nested/keep.php",
+        "z.php",
+        "a.inc",
+        "data/a.xml",
+        "data/b.yaml",
+        "views/page.html",
+        "notes.txt",
+    ] {
+        let path = root.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "").unwrap();
+    }
+    std::fs::write(root.join(".gitignore"), "ignored/\n").unwrap();
+    std::fs::write(root.join("nested/.gitignore"), "*.php\n!keep.php\n").unwrap();
+    let filters = Arc::new(IndexFilters::compile(
+        Some(&root),
+        &["excluded/".to_string()],
+        &["inc".to_string()],
+    ));
+    let vendors = [root.join("vendor")];
+    let (php, resources) = collect_workspace_index_files_gitignore(&root, &vendors, &filters, None);
+    assert_eq!(
+        php,
+        ["a.inc", "nested/keep.php", "z.php"].map(|p| root.join(p))
+    );
+    assert_eq!(
+        resources,
+        ["data/a.xml", "data/b.yaml", "views/page.html"].map(|p| root.join(p))
+    );
+    assert_eq!(
+        collect_php_files_gitignore(&root, &vendors, &filters, None),
+        php
+    );
+    let mut all = Vec::new();
+    visit_workspace_files_gitignore(&root, &vendors, &filters, None, |path| {
+        all.push(path.to_path_buf())
+    });
+    let mut expected = php;
+    expected.extend(resources);
+    expected.push(root.join("notes.txt"));
+    expected.sort_unstable();
+    all.sort_unstable();
+    assert_eq!(all, expected);
+}
+
 // ── Interior symlink walking (issue #383) ─────────────────────────
 //
 // A symlinked directory *inside* a walk root is descended into, which is

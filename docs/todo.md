@@ -41,8 +41,8 @@ contributor even though it's short.
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ----------- |
 |     | Clear [refactoring gate](todo/refactor.md)                                                                                                                      | —           | —           |
 | T61 | [A regression that changes where a call resolves goes unnoticed](todo/type-inference.md#t61-a-regression-that-changes-where-a-call-resolves-goes-unnoticed) | Medium      | Medium      |
-| P92 | [Startup's file walks and resource indexing run on one core](todo/performance.md#p92-startups-file-walks-and-resource-indexing-run-on-one-core) | Medium | Medium |
 | P86 | [A Symfony app's generated `config/reference.php` is slow to parse](todo/performance.md#p86-a-symfony-apps-generated-configreferencephp-is-slow-to-parse) | Medium | Medium |
+| P96 | [Reuse compatible Drupal discovery results in the full index](todo/performance.md#p96-reuse-compatible-drupal-discovery-results-in-the-full-index) | Low-Medium | Medium |
 | P91 | [Parsing and merging of the full index take turns](todo/performance.md#p91-parsing-and-merging-of-the-full-index-take-turns) | Medium-High | Medium-High |
 |     | **Release 1.1.0**                                                                                                                                               |             |             |
 

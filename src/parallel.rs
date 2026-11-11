@@ -97,11 +97,28 @@ where
     R: Send,
     F: Fn(&'a T) -> Option<R> + Sync,
 {
+    map_in_blocks_with_threads(thread_name, items, block, None, work)
+}
+
+/// [`map_in_blocks`] with a worker limit for scans whose temporary state
+/// would otherwise multiply across every available core.
+pub(crate) fn map_in_blocks_with_threads<'a, T, R, F>(
+    thread_name: &'static str,
+    items: &'a [T],
+    block: usize,
+    threads: Option<usize>,
+    work: F,
+) -> Vec<R>
+where
+    T: Sync,
+    R: Send,
+    F: Fn(&'a T) -> Option<R> + Sync,
+{
     if items.len() <= block {
         return items.iter().filter_map(&work).collect();
     }
     let blocks: Vec<&[T]> = items.chunks(block).collect();
-    let mut produced = map_indexed(thread_name, blocks.len(), |_, index| {
+    let mut produced = map_indexed_with_threads(thread_name, blocks.len(), threads, |_, index| {
         let out: Vec<R> = blocks[index].iter().filter_map(&work).collect();
         (!out.is_empty()).then_some(out)
     });

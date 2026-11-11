@@ -1,10 +1,9 @@
 //! `.gitignore`-aware walks of the workspace.
 //!
 //! [`walk_roots`] is the parallel multi-root walk class discovery lists its
-//! files with.  The serial walks serve the passes that read project files
-//! by path rather than through the symbol index: the full workspace index,
-//! namespace rename, go-to-implementation, the `analyze` file list, and the
-//! Laravel enumerations that find `config/` and `lang/` files on disk.
+//! files with. Workspace file lists use parallel discovery too. Streaming
+//! visitors serve the passes that consume entries one at a time, such as
+//! namespace rename and Laravel's `config/` and `lang/` enumerations.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -34,13 +33,9 @@ pub(crate) fn collect_php_files_gitignore(
     filters: &Arc<IndexFilters>,
     followed: Option<&FollowedLinks>,
 ) -> Vec<PathBuf> {
-    let mut result = Vec::new();
-    visit_workspace_files_gitignore(root, vendor_dir_paths, filters, followed, |path| {
-        if filters.is_php_file(path) {
-            result.push(path.to_path_buf());
-        }
-    });
-    result
+    collect_workspace_files(root, vendor_dir_paths, filters, followed, |path| {
+        filters.is_php_file(path)
+    })
 }
 
 /// Collect the PHP and schema-free YAML/XML inputs used by the full workspace
@@ -54,15 +49,17 @@ pub(crate) fn collect_workspace_index_files_gitignore(
 ) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let mut php_files = Vec::new();
     let mut resource_files = Vec::new();
-    visit_workspace_files_gitignore(root, vendor_dir_paths, filters, followed, |path| {
-        if filters.is_php_file(path) {
-            php_files.push(path.to_path_buf());
-        } else if crate::resource_navigation::is_resource_path(path)
+    for path in collect_workspace_files(root, vendor_dir_paths, filters, followed, |path| {
+        filters.is_php_file(path)
+            || crate::resource_navigation::is_resource_path(path)
             || crate::twig::roots::is_candidate_path(path)
-        {
-            resource_files.push(path.to_path_buf());
+    }) {
+        if filters.is_php_file(&path) {
+            php_files.push(path);
+        } else {
+            resource_files.push(path);
         }
-    });
+    }
     (php_files, resource_files)
 }
 
@@ -85,13 +82,81 @@ pub(crate) fn visit_workspace_files_gitignore(
         LinkClaims::new([root.to_path_buf()], followed),
     )
     .build();
-
     for entry in walker.flatten() {
-        let path = entry.path();
-        if path.is_file() {
-            visit(path);
+        let kind = entry.file_type();
+        if kind.is_some_and(|kind| kind.is_file())
+            || (kind.is_none_or(|kind| !kind.is_dir()) && entry.path().is_file())
+        {
+            visit(entry.path());
         }
     }
+}
+
+fn collect_workspace_files(
+    root: &Path,
+    vendor_dir_paths: &[PathBuf],
+    filters: &Arc<IndexFilters>,
+    followed: Option<&FollowedLinks>,
+    include: impl Fn(&Path) -> bool + Sync,
+) -> Vec<PathBuf> {
+    collect_files_parallel(
+        workspace_walk_builder(
+            root,
+            Arc::new(vendor_dir_paths.to_vec()),
+            Arc::clone(filters),
+            false,
+            LinkClaims::new([root.to_path_buf()], followed),
+        ),
+        include,
+    )
+}
+
+/// Collect matching files in path order, buffering privately on each walker
+/// thread so discovery needs no shared lock or channel send for each file.
+pub(super) fn collect_files_parallel(
+    mut builder: ignore::WalkBuilder,
+    include: impl Fn(&Path) -> bool + Sync,
+) -> Vec<PathBuf> {
+    struct Files {
+        paths: Vec<PathBuf>,
+        sender: std::sync::mpsc::Sender<Vec<PathBuf>>,
+    }
+    impl Drop for Files {
+        fn drop(&mut self) {
+            let _ = self.sender.send(std::mem::take(&mut self.paths));
+        }
+    }
+
+    let (sender, receiver) = std::sync::mpsc::channel();
+    // Directory discovery is cheaper than parsing: bound its per-worker
+    // ignore caches and path buffers instead of scaling them to every core.
+    builder.threads(crate::parallel::available_cores().min(4));
+    builder.build_parallel().run(|| {
+        let mut files = Files {
+            paths: Vec::new(),
+            sender: sender.clone(),
+        };
+        let include = &include;
+        Box::new(move |entry| {
+            if let Ok(entry) = entry {
+                let path = entry.path();
+                let kind = entry.file_type();
+                // Unfollowed file symlinks still need their target checked.
+                // Ordinary entries already carry their type from readdir.
+                if !kind.is_some_and(|kind| kind.is_dir())
+                    && include(path)
+                    && (kind.is_some_and(|kind| kind.is_file()) || path.is_file())
+                {
+                    files.paths.push(path.to_path_buf());
+                }
+            }
+            ignore::WalkState::Continue
+        })
+    });
+    drop(sender);
+    let mut paths: Vec<_> = receiver.into_iter().flatten().collect();
+    paths.sort_unstable();
+    paths
 }
 
 /// What a [`walk_roots`] call leaves out.

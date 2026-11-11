@@ -68,38 +68,6 @@ spreads it thinly.
 
 ---
 
-## P92. Startup's file walks and resource indexing run on one core
-
-**Impact: Medium · Complexity: Medium**
-
-On the same checkout and build as P91, about 0.5 s of the 2.4 s to idle
-runs on a single core while the other 31 wait:
-
-- `scan_drupal_directories` walks the web root with a sequential `ignore`
-  walker and a `path.is_file()` stat per entry, before the classmap
-  scanner's parallel lexing starts.
-- `visit_workspace_files_gitignore`, the full index's discovery walk, is
-  sequential too and stats every entry. It takes 214 ms in release and
-  737 ms in debug, and it walks most of the web root a second time.
-- `index_resource_paths_batch` reads and scans the 4,494 YAML and Twig
-  files the walk found one after another.
-
-The classmap scanner already has a parallel walk (`walk_roots`:
-`build_parallel`, work stealing, sorted output for a deterministic
-first-wins merge). Move both walks onto that pattern and use the entry's
-own file type rather than a fresh stat. The full index could also take the
-files the Drupal walk found instead of walking them again. Read and scan the
-resource files on parallel workers and publish them in one merge, as the PHP
-files are. PHPlumb's discovery is a single parallel walk that canonicalizes
-only paths reached through a symlink, which is what its 0.49 s includes.
-
-**Where to look:** `scan_drupal_directories` in
-`src/classmap_scanner/discovery.rs`, `visit_workspace_files_gitignore` and
-`walk_roots` in `src/classmap_scanner/walk.rs`,
-`index_resource_paths_batch` in `src/resource_navigation.rs`.
-
----
-
 ## P86. A Symfony app's generated `config/reference.php` is slow to parse
 
 **Impact: Medium · Complexity: Medium**
@@ -167,6 +135,34 @@ it is.
 `src/type_engine/variable/forward_walk/scope_state/proofs.rs`,
 `shape_is_subshape` in `src/php_type/subtype.rs`, `runtime_shape_keys`
 in `src/php_type/shape_keys.rs`.
+
+---
+
+## P96. Reuse compatible Drupal discovery results in the full index
+
+**Impact: Low-Medium · Complexity: Medium**
+
+Drupal symbol discovery and full workspace discovery still traverse
+overlapping directory trees. Investigate reusing the first pass's file
+inventory where the full index would discover the same files, and measure
+the remaining startup cost before retaining an inventory in memory.
+
+The passes have different contracts: Drupal discovery deliberately ignores
+`.gitignore` and searches only its extension roots, while workspace discovery
+honors `.gitignore`, vendor exclusions, and followed-link tracking across the
+whole workspace. Reusing a path list must not admit ignored files, drop
+resources outside Drupal roots, or lose watcher registrations. Invalidate it
+when configuration or the filesystem changes; subsequent navigation still
+has to discover new files.
+
+This is the separate inventory-reuse follow-up from the startup discovery
+work. Compare startup time and peak memory with independent walks, and test
+gitignore differences, custom extensions, symlinks, and files added after
+initialization.
+
+**Where to look:** `scan_drupal_directories` in
+`src/classmap_scanner/discovery.rs`, `collect_workspace_index_files_gitignore`
+in `src/classmap_scanner/walk.rs`, and `src/indexing/preload.rs`.
 
 ---
 

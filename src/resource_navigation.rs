@@ -233,19 +233,25 @@ impl Backend {
                     && (is_twig || !crate::symfony::routes::is_twig_uri(uri))
             })
             .partition(|(uri, _)| crate::twig::roots::is_candidate_uri(uri));
-        // An open file is read from its buffer.
+        // Keep reads and scans in small blocks: large projects share the
+        // work across cores, while a handful of files needs no new threads.
+        const BLOCK_FILES: usize = 32;
+        let threads = Some(crate::parallel::available_cores().min(4));
+        let read = |uri: &str, path: &Path| {
+            let open = self.open_files.read().get(uri).cloned();
+            open.or_else(|| std::fs::read_to_string(path).ok().map(Arc::new))
+        };
         let candidates: Vec<(&String, Arc<String>)> = if is_twig {
-            candidates
-                .into_iter()
-                .filter_map(|(uri, path)| {
-                    let open = self.open_files.read().get(uri).cloned();
-                    let content = match open {
-                        Some(content) => content,
-                        None => Arc::new(std::fs::read_to_string(path).ok()?),
-                    };
-                    Some((uri, content))
-                })
-                .collect()
+            crate::parallel::map_in_blocks_with_threads(
+                "resource-read",
+                &candidates,
+                BLOCK_FILES,
+                threads,
+                |file| {
+                    let (uri, path) = *file;
+                    Some((uri, read(uri, path)?))
+                },
+            )
         } else {
             Vec::new()
         };
@@ -255,25 +261,39 @@ impl Backend {
                 .map(|(uri, content)| (uri.as_str(), content.as_str())),
         );
 
-        let candidate_maps = candidates
-            .iter()
-            .filter(|(uri, _)| self.is_resource_uri(uri))
-            .map(|(uri, content)| {
+        let mut maps = crate::parallel::map_in_blocks_with_threads(
+            "resource-scan",
+            &candidates,
+            BLOCK_FILES,
+            threads,
+            |(uri, content)| {
+                if !self.is_resource_uri(uri) {
+                    return None;
+                }
                 self.index_framework_uri_content(uri, content);
-                (
+                Some((
                     (*uri).clone(),
                     Arc::new(self.resource_symbol_map(uri, content)),
-                )
-            });
-        let other_maps = others.into_iter().filter_map(|(uri, path)| {
-            let content = std::fs::read_to_string(path).ok()?;
-            self.index_framework_uri_content(uri, &content);
-            Some((
-                uri.clone(),
-                Arc::new(self.resource_symbol_map(uri, &content)),
-            ))
-        });
-        let maps: Vec<(String, Arc<SymbolMap>)> = candidate_maps.chain(other_maps).collect();
+                ))
+            },
+        );
+        drop(candidates);
+        let other_maps = crate::parallel::map_in_blocks_with_threads(
+            "resource-scan",
+            &others,
+            BLOCK_FILES,
+            threads,
+            |file| {
+                let (uri, path) = *file;
+                let content = read(uri, path)?;
+                self.index_framework_uri_content(uri, &content);
+                Some((
+                    uri.clone(),
+                    Arc::new(self.resource_symbol_map(uri, &content)),
+                ))
+            },
+        );
+        maps.extend(other_maps);
         if maps.is_empty() {
             return;
         }
@@ -696,6 +716,102 @@ fn is_identifier(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resource_batch_reads_open_buffers_and_skips_unreadable_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dunce::canonicalize(dir.path()).unwrap();
+        let backend = Backend::new_test_with_workspace(root.clone(), Vec::new());
+        backend.set_is_symfony(false);
+        backend.set_is_twig(false);
+        let mut files = Vec::new();
+        for index in 0..70 {
+            let path = root.join(format!("file{index}.yaml"));
+            std::fs::write(&path, "handler: App\\Disk\n").unwrap();
+            files.push((crate::util::path_to_uri(&path), path));
+        }
+        backend.open_files.write().insert(
+            files[35].0.clone(),
+            Arc::new("handler: App\\Buffer\n".to_string()),
+        );
+        let missing = root.join("missing.yaml");
+        files.push((crate::util::path_to_uri(&missing), missing));
+        let invalid = root.join("invalid.yaml");
+        std::fs::write(&invalid, [0xff]).unwrap();
+        files.push((crate::util::path_to_uri(&invalid), invalid));
+        backend.index_resource_paths_batch(&files);
+        for (index, (uri, _)) in files.iter().enumerate() {
+            let map = backend.symbol_map_for(uri);
+            if index >= 70 {
+                assert!(map.is_none());
+                continue;
+            }
+            let map = map.unwrap();
+            let names: Vec<_> = map
+                .spans
+                .iter()
+                .filter_map(|span| match &span.kind {
+                    SymbolKind::ClassReference { name, .. } => Some(name.as_str()),
+                    _ => None,
+                })
+                .collect();
+            assert_eq!(
+                names,
+                vec![if index == 35 {
+                    "App\\Buffer"
+                } else {
+                    "App\\Disk"
+                }]
+            );
+        }
+        let updated = "handler: App\\Updated\n";
+        backend
+            .open_files
+            .write()
+            .insert(files[35].0.clone(), Arc::new(updated.to_string()));
+        backend.index_resource_paths_batch(&files);
+        let map = backend.symbol_map_for(&files[35].0).unwrap();
+        assert!(map.spans.iter().any(|span| matches!(&span.kind,
+            SymbolKind::ClassReference { name, .. } if name == "App\\Updated")));
+        assert!(!map.spans.iter().any(|span| matches!(&span.kind,
+            SymbolKind::ClassReference { name, .. } if name == "App\\Buffer")));
+    }
+
+    #[test]
+    fn resource_batch_discovers_all_template_roots_before_parallel_scans() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dunce::canonicalize(dir.path()).unwrap();
+        let backend = Backend::new_test_with_workspace(root.clone(), Vec::new());
+        backend.set_is_symfony(false);
+        backend.set_is_twig(true);
+        std::fs::create_dir_all(root.join("theme/pages")).unwrap();
+        let mut files = Vec::new();
+        for index in 0..70 {
+            let path = root.join(format!("theme/pages/page{index}.html"));
+            std::fs::write(&path, "{% extends 'base.html' %}").unwrap();
+            files.push((crate::util::path_to_uri(&path), path));
+        }
+        let base = root.join("theme/pages/base.html");
+        std::fs::write(&base, "{% block body %}{% endblock %}").unwrap();
+        files.push((crate::util::path_to_uri(&base), base));
+        let unrelated = root.join("readme.html");
+        std::fs::write(&unrelated, "<p>Documentation</p>").unwrap();
+        files.push((crate::util::path_to_uri(&unrelated), unrelated));
+        backend.index_resource_paths_batch(&files);
+        let names = backend.symfony_declared_names(StringKeyKind::TwigTemplate);
+        assert_eq!(names.len(), 71);
+        assert!(names.iter().any(|name| name == "base.html"));
+        for (uri, _) in &files[..71] {
+            assert!(backend.symbol_map_for(uri).is_some(), "{uri}");
+        }
+        assert!(backend.symbol_map_for(&files[71].0).is_none());
+        files.reverse();
+        backend.index_resource_paths_batch(&files);
+        assert_eq!(
+            backend.symfony_declared_names(StringKeyKind::TwigTemplate),
+            names
+        );
+    }
 
     #[test]
     fn scans_classes_without_knowing_yaml_keys() {
