@@ -262,13 +262,13 @@ pub struct ClassInfo {
     /// Cleared once inheritance has selected the constructor, so inherited
     /// ordinary methods cannot accidentally become constructors.
     pub legacy_constructor_name: Option<Atom>,
-    /// The selected legacy constructor, independent of ordinary method
-    /// overriding. A child overriding `Parent::Parent` still constructs
-    /// through the parent's original method.
-    pub legacy_constructor: Option<Arc<MethodInfo>>,
-    /// Consuming class of the selected legacy constructor. This remains
+    /// Constructors whose identity ordinary method lookup cannot preserve:
+    /// legacy constructors and inherited private constructors. A child
+    /// overriding `Parent::Parent` still constructs through the original method.
+    pub selected_constructor: Option<Arc<MethodInfo>>,
+    /// Consuming class of the selected constructor. This remains
     /// distinct from a subclass's ordinary override of the same method.
-    pub legacy_constructor_owner: Option<Atom>,
+    pub constructor_owner: Option<Atom>,
     /// Index from lowercased method name → position in `methods`
     /// (PHP method names are case-insensitive), sorted by name for
     /// binary search.
@@ -711,7 +711,7 @@ impl ClassInfo {
 
     /// Constructor selected by PHP's declaration and inheritance rules.
     pub fn get_constructor(&self) -> Option<&MethodInfo> {
-        self.legacy_constructor.as_deref().or_else(|| {
+        self.selected_constructor.as_deref().or_else(|| {
             self.get_method("__construct").or_else(|| {
                 self.legacy_constructor_name
                     .as_deref()
@@ -720,10 +720,21 @@ impl ClassInfo {
         })
     }
 
+    /// Resolve a method reached with `::`. PHP routes `::__construct()`
+    /// to the selected constructor, including a class-name constructor.
+    /// Ordinary arrow calls must continue to use `get_method`.
+    pub fn get_scope_method(&self, name: &str) -> Option<&MethodInfo> {
+        if name.eq_ignore_ascii_case("__construct") {
+            self.get_constructor()
+        } else {
+            self.get_method(name)
+        }
+    }
+
     /// Shared constructor metadata, preserving an inherited legacy method
     /// even when the ordinary method table contains an override.
     pub(crate) fn constructor_arc(&self) -> Option<Arc<MethodInfo>> {
-        self.legacy_constructor.clone().or_else(|| {
+        self.selected_constructor.clone().or_else(|| {
             self.get_constructor()
                 .and_then(|method| self.get_method_arc(&method.name))
         })

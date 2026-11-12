@@ -120,7 +120,10 @@ Version boundaries follow the [constructor removal RFC](https://wiki.php.net/rfc
 The reference runner accepts `constructors-5.5.json` and `constructors-5.6.json`
 exported by `PHPANTOM_COMPAT_OUTPUT`. Reflection verifies the selected parameter
 names against PHP 5.5.38 and 5.6.40. Explicit `parent::__construct()` dispatch to
-a legacy constructor remains a separate backlog item.
+a legacy constructor is checked by `constructor-access-*.json`, along with
+constructor visibility and PHP 8 controls. Fatal-runtime fixtures check both
+the exit status and the error text; successful lint alone does not establish
+that construction is legal.
 
 ## Built-in availability
 

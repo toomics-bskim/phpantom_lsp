@@ -68,7 +68,7 @@ impl Backend {
             );
             if let Some(constructor) = merged.get_constructor() {
                 let owner = merged
-                    .legacy_constructor_owner
+                    .constructor_owner
                     .and_then(|name| resolved_class_loader(Fqn::new(&name)));
                 return Some(self.hover_for_method(
                     constructor,

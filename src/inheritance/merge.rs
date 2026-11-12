@@ -153,7 +153,7 @@ pub(crate) fn resolve_class_with_inheritance(
     );
 
     // 2. Walk up the `extends` chain and merge parent members.
-    let mut constructor_selected = select_legacy_constructor(&mut merged);
+    let mut constructor_selected = select_constructor(&mut merged);
     merge_parent_chain(
         class,
         &mut merged,
@@ -171,15 +171,17 @@ pub(crate) fn resolve_class_with_inheritance(
 }
 
 /// Freeze constructor selection before inherited ordinary methods arrive.
-fn select_legacy_constructor(class: &mut ClassInfo) -> bool {
+fn select_constructor(class: &mut ClassInfo) -> bool {
     let constructor = class.constructor_arc();
     let selected = constructor.is_some();
-    class.legacy_constructor = constructor.filter(|m| !m.name.eq_ignore_ascii_case("__construct"));
-    class.legacy_constructor_owner = class.legacy_constructor.as_ref().map(|_| {
-        class
-            .legacy_constructor_owner
-            .unwrap_or_else(|| class.fqn())
+    class.selected_constructor = constructor.filter(|m| {
+        !m.name.eq_ignore_ascii_case("__construct")
+            || m.visibility == crate::types::Visibility::Private
     });
+    class.constructor_owner = class
+        .selected_constructor
+        .as_ref()
+        .map(|_| class.constructor_owner.unwrap_or_else(|| class.fqn()));
     class.legacy_constructor_name = None;
     selected
 }
@@ -263,12 +265,14 @@ fn merge_parent_chain(
                 };
             if let Some(constructor) = constructor_parent.constructor_arc() {
                 *constructor_selected = true;
-                if !constructor.name.eq_ignore_ascii_case("__construct") {
+                if !constructor.name.eq_ignore_ascii_case("__construct")
+                    || constructor.visibility == crate::types::Visibility::Private
+                {
                     let transform = LevelTransform::new(&parent, &level_subs);
-                    merged.legacy_constructor = Some(transform.method(&constructor));
-                    merged.legacy_constructor_owner = Some(
+                    merged.selected_constructor = Some(transform.method(&constructor));
+                    merged.constructor_owner = Some(
                         constructor_parent
-                            .legacy_constructor_owner
+                            .constructor_owner
                             .unwrap_or_else(|| parent.fqn()),
                     );
                 }

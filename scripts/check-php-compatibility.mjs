@@ -44,6 +44,19 @@ try {
         linted++;
         if (!fixture.runtime) continue;
         assert(fixture.lint, `${fixture.id}: cannot execute a syntax-negative fixture`);
+        if (fixture.runtime.expectedExit !== undefined) {
+            assert(Number.isInteger(fixture.runtime.expectedExit) && fixture.runtime.expectedExit !== 0);
+            assert.equal(typeof fixture.runtime.message, 'string');
+            assert(fixture.runtime.message.length > 0);
+            const result = run([path]);
+            if (result.status !== fixture.runtime.expectedExit
+                || !(result.stdout + result.stderr).includes(fixture.runtime.message)) {
+                failures.push(`${fixture.id}: expected exit=${fixture.runtime.expectedExit} containing ${fixture.runtime.message}, got exit=${result.status}\n${result.stdout}${result.stderr}`);
+            } else {
+                evaluated++;
+            }
+            continue;
+        }
         writeFileSync(path, fixture.source + '\necho "\\nPHPANTOM_RESULT:", json_encode(array(gettype('
             + fixture.runtime.probe + '), ' + fixture.runtime.probe + '));\n');
         const result = run([path]);

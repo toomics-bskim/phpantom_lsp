@@ -438,6 +438,20 @@ impl Backend {
                 (result, target_class.clone())
             };
 
+            if is_static
+                && kind == MemberRefKind::Method
+                && member_name.eq_ignore_ascii_case("__construct")
+                && let Some(constructor) = merged.get_constructor()
+            {
+                member_result = Some(HoverMemberHit::Method(Box::new(constructor.clone())));
+                owner = merged
+                    .constructor_owner
+                    .and_then(|name| {
+                        resolved_class_loader(crate::class_lookup::Fqn::new(name.as_str()))
+                    })
+                    .unwrap_or_else(|| merged.clone());
+            }
+
             // ── Enrich with call-site generic substitution ──
             // The merged (cached) class has raw template param
             // names (e.g. TModel) because the cache is FQN-keyed
@@ -493,7 +507,7 @@ impl Backend {
                     }
                     let declaring = find_declaring_class(
                         &owner,
-                        member_name,
+                        &method.name,
                         &MemberKindForOrigin::Method,
                         &resolved_class_loader,
                     );

@@ -52,11 +52,12 @@ pub(super) fn declared_member(
     is_method_call: bool,
 ) -> Option<(Visibility, MemberKind)> {
     if is_method_call {
-        return class
-            .methods
-            .iter()
-            .find(|m| m.name.eq_ignore_ascii_case(member_name))
-            .map(|m| (m.visibility, MemberKind::Method));
+        return if is_static {
+            class.get_scope_method(member_name)
+        } else {
+            class.get_method(member_name)
+        }
+        .map(|m| (m.visibility, MemberKind::Method));
     }
 
     if is_static {

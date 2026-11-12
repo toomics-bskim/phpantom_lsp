@@ -9,6 +9,9 @@ mod builtins;
 #[path = "compatibility/generated_edits.rs"]
 mod generated_edits;
 
+#[path = "compatibility/constructor_access.rs"]
+mod constructor_access;
+
 use std::path::Path;
 use std::time::Duration;
 

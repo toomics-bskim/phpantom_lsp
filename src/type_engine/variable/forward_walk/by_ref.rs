@@ -772,7 +772,7 @@ fn method_call_on<'b>(
         let parameters = method.parameters.clone();
         let name = method.name;
         let owner = if method_name.is_none()
-            && let Some(owner) = merged.legacy_constructor_owner
+            && let Some(owner) = merged.constructor_owner
             && owner != merged.fqn()
         {
             let declaration = (ctx.file.class_loader)(crate::class_lookup::Fqn::new(&owner))?;

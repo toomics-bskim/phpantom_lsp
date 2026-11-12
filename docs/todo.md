@@ -205,7 +205,6 @@ source syntax, runtime semantics, built-ins, and editor behavior.
 | LP15 | [Returned closures retain their bound receiver type](todo/legacy-php.md#lp15-returned-closures-retain-their-bound-receiver-type) | Medium | High |
 | LP16 | [Unannotated generators infer yielded values](todo/legacy-php.md#lp16-unannotated-generators-infer-yielded-values) | Medium | High |
 | LP17 | [Variadic and unpacked calls carry argument types](todo/legacy-php.md#lp17-variadic-and-unpacked-calls-carry-argument-types) | Medium-High | High |
-| LP20 | [Constructor access and explicit calls follow legacy rules](todo/legacy-php.md#lp20-constructor-access-and-explicit-calls-follow-legacy-rules) | High | Medium-High |
 | LP21 | [Dynamic names preserve writes and scope effects](todo/legacy-php.md#lp21-dynamic-names-preserve-writes-and-scope-effects) | Medium-High | High |
 | LP22 | [Destructuring preserves target evaluation and aliases](todo/legacy-php.md#lp22-destructuring-preserves-target-evaluation-and-aliases) | Medium-High | High |
 | LP18 | [Qualify and document the support contract](todo/legacy-php.md#lp18-qualify-and-document-the-support-contract) | High | Medium |

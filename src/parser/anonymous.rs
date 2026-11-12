@@ -80,8 +80,8 @@ impl Backend {
 
         ClassInfo {
             legacy_constructor_name: None,
-            legacy_constructor: None,
-            legacy_constructor_owner: None,
+            selected_constructor: None,
+            constructor_owner: None,
             kind: ClassLikeKind::Class,
             name,
             methods: crate::types::into_arcs(methods).into(),

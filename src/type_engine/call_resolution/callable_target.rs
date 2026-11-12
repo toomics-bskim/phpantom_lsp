@@ -71,7 +71,11 @@ impl Backend {
         };
 
         let split_args = crate::text_scan::split_top_level_commas(at);
-        let method_subs = Self::build_method_template_subs(owner, method_name, &split_args, rctx);
+        let method_subs = if method_name.eq_ignore_ascii_case("__construct") {
+            Self::build_selected_method_template_subs(declared, &split_args, rctx)
+        } else {
+            Self::build_method_template_subs(owner, method_name, &split_args, rctx)
+        };
         if !method_subs.is_empty() {
             crate::inheritance::apply_substitution_to_method(&mut bound, &method_subs);
             self_bound_params = super::template_subs::self_bound_template_params(
@@ -414,7 +418,7 @@ impl Backend {
             )
         };
 
-        let m = merged.get_method_ci(method_name)?;
+        let m = merged.get_scope_method(method_name)?;
 
         if reachability_depends_on_call_site(m, &merged)
             && let Some(target) = unreachable_method_target(m, &merged, method_name, true, rctx)
@@ -1005,6 +1009,10 @@ fn unreachable_method_target(
     is_static: bool,
     rctx: &ResolutionCtx<'_>,
 ) -> Option<ResolvedCallableTarget> {
+    if is_static && method_name.eq_ignore_ascii_case("__construct") {
+        // PHP rejects an inaccessible constructor without trying a magic handler.
+        return None;
+    }
     let handler = if is_static {
         // A `::` call PHP cannot route to the method goes to `__call` when
         // made from an instance of the class (`parent::hidden()`), which is

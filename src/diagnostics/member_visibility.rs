@@ -78,6 +78,33 @@ use crate::types::{ClassInfo, ClassLikeKind, Visibility};
 /// Diagnostic code for an access to a member the calling scope may not see.
 pub(crate) const INVALID_MEMBER_ACCESS_CODE: &str = "inaccessible_member";
 
+/// Construction never dispatches an inaccessible constructor to a magic handler.
+pub(super) fn inaccessible_constructor_message(
+    merged: &Arc<ClassInfo>,
+    current_class: Option<&ClassInfo>,
+    class_loader: &ResolvedClassLoader<'_>,
+) -> Option<String> {
+    let constructor = merged.get_constructor()?;
+    let restriction = Restriction::from_visibility(constructor.visibility)?;
+    if current_class.is_some_and(|class| class.kind == ClassLikeKind::Trait) {
+        return None;
+    }
+    match judge_scope(
+        merged,
+        "__construct",
+        true,
+        true,
+        restriction,
+        MemberKind::Method,
+        current_class,
+        false,
+        class_loader,
+    ) {
+        BranchVerdict::Rejected(rejection) => Some(build_message(&rejection, &constructor.name)),
+        _ => None,
+    }
+}
+
 /// What one branch of a union type says about the access.
 enum BranchVerdict {
     /// The scope may reach the member, or nothing here can be judged —
@@ -249,7 +276,10 @@ fn judge_branch(
 
     // A class that answers for members the caller cannot see directly
     // turns the access into a magic-method call rather than an error.
-    if handles_inaccessible_access(merged, is_static, is_method_call) {
+    // Explicit constructor scope calls bypass these handlers.
+    if !(is_static && is_method_call && member_name.eq_ignore_ascii_case("__construct"))
+        && handles_inaccessible_access(merged, is_static, is_method_call)
+    {
         return BranchVerdict::Permitted;
     }
 
@@ -416,6 +446,13 @@ fn declaring_class(
     restriction: Restriction,
     class_loader: &ResolvedClassLoader<'_>,
 ) -> Option<Arc<ClassInfo>> {
+    if is_static
+        && is_method_call
+        && member_name.eq_ignore_ascii_case("__construct")
+        && let Some(owner) = merged.constructor_owner
+    {
+        return class_loader(Fqn::new(owner.as_str()));
+    }
     let raw = class_loader(Fqn::new(merged.fqn().as_str()))?;
 
     match restriction {

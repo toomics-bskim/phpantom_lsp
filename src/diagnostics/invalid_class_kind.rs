@@ -13,10 +13,13 @@
 //! Only references where the target class is loaded (in `uri_classes_index` or
 //! stubs) are flagged.  Unknown classes are not reported here (that is
 //! the unknown-class diagnostic's job).
+//! Construction sites also check the selected constructor's visibility,
+//! including targets written without an argument list.
 
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use mago_span::HasSpan;
 use mago_syntax::cst::*;
 use tower_lsp_server::gen_lsp_types::*;
 
@@ -165,15 +168,14 @@ impl Backend {
             }
         }
 
-        self.collect_variable_instantiation_diagnostics(ctx, uri, content, out);
+        self.collect_instantiation_diagnostics(ctx, uri, content, out);
     }
 
-    /// Check `new $class` against the classes the variable spells.
+    /// Check constructor access and dynamic instantiation targets.
     ///
-    /// Only a variable holding nothing but strings that spell classes is
-    /// judged, and only when every class it may spell is invalid: one
-    /// instantiable class among them makes the `new` legal.
-    fn collect_variable_instantiation_diagnostics(
+    /// Dynamic targets are judged only when the variable holds exact class
+    /// names, and a diagnostic requires every possible target to reject it.
+    fn collect_instantiation_diagnostics(
         &self,
         ctx: &FileDiagnosticContext,
         uri: &str,
@@ -185,7 +187,7 @@ impl Backend {
             let mut sites = Vec::new();
             for statement in program.statements.iter() {
                 mago_syntax::walker::Walker::walk_statement(
-                    &VariableInstantiationWalker,
+                    &InstantiationSiteWalker,
                     statement,
                     &mut sites,
                 );
@@ -202,9 +204,52 @@ impl Backend {
                 continue;
             }
             let rctx = loaders.resolution_ctx_at(content, site.start);
-            let Some(classes) = classes_instantiated_by_variable(&site.var_name, &rctx) else {
-                continue;
+            let subject = &content[site.start as usize..site.end as usize];
+            let classes = if site.is_variable {
+                let Some(classes) = classes_instantiated_by_variable(subject, &rctx) else {
+                    continue;
+                };
+                classes
+            } else {
+                crate::types::ResolvedType::into_arced_classes(
+                    crate::type_engine::resolver::resolve_target_classes(
+                        subject,
+                        crate::types::AccessKind::DoubleColon,
+                        &rctx,
+                    ),
+                )
             };
+            let mut access_messages = classes.iter().map(|class| {
+                let merged = crate::virtual_members::resolve_class_fully_cached(
+                    class,
+                    rctx.file.class_loader,
+                    &self.resolved_class_cache,
+                );
+                super::member_visibility::inaccessible_constructor_message(
+                    &merged,
+                    rctx.current_class,
+                    rctx.file.class_loader,
+                )
+            });
+            if let Some(Some(message)) = access_messages.next()
+                && access_messages.all(|message| message.is_some())
+                && let Some(range) = self.offset_range_to_lsp_range(
+                    uri,
+                    content,
+                    site.start as usize,
+                    site.end as usize,
+                )
+            {
+                out.push(make_diagnostic(
+                    range,
+                    DiagnosticSeverity::Error,
+                    super::member_visibility::INVALID_MEMBER_ACCESS_CODE,
+                    message,
+                ));
+            }
+            if !site.is_variable {
+                continue;
+            }
             let verdicts: Option<Vec<_>> = classes
                 .iter()
                 .map(|class| {
@@ -237,28 +282,36 @@ impl Backend {
     }
 }
 
-/// A `new $class` in the source: the variable and its byte span.
-struct VariableInstantiation {
-    var_name: String,
+/// A construction target and its byte span.
+struct InstantiationSite {
+    is_variable: bool,
     start: u32,
     end: u32,
 }
 
-struct VariableInstantiationWalker;
+struct InstantiationSiteWalker;
 
-impl<'ast, 'arena> mago_syntax::walker::Walker<'ast, 'arena, Vec<VariableInstantiation>>
-    for VariableInstantiationWalker
+impl<'ast, 'arena> mago_syntax::walker::Walker<'ast, 'arena, Vec<InstantiationSite>>
+    for InstantiationSiteWalker
 {
     fn walk_in_instantiation(
         &self,
         node: &'ast Instantiation<'arena>,
-        sites: &mut Vec<VariableInstantiation>,
+        sites: &mut Vec<InstantiationSite>,
     ) {
-        if let Expression::Variable(Variable::Direct(var)) = node.class {
-            sites.push(VariableInstantiation {
-                var_name: crate::atom::bytes_to_str(var.name).to_string(),
-                start: var.span.start.offset,
-                end: var.span.end.offset,
+        if matches!(
+            node.class,
+            Expression::Identifier(_)
+                | Expression::Self_(_)
+                | Expression::Static(_)
+                | Expression::Parent(_)
+                | Expression::Variable(Variable::Direct(_))
+        ) {
+            let span = node.class.span();
+            sites.push(InstantiationSite {
+                is_variable: matches!(node.class, Expression::Variable(_)),
+                start: span.start.offset,
+                end: span.end.offset,
             });
         }
     }

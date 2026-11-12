@@ -97,8 +97,8 @@ hint; it is not evidence of support for the later primitive type.
 ## Delivery order
 
 Each numbered item is one implementation task and one PR. LP13, LP15–LP17
-address the remaining semantic and inference gaps. LP20 covers constructor
-access and explicit calls. LP18 qualifies the final support claim.
+address the remaining semantic and inference gaps. LP18 qualifies the final
+support claim.
 Dependencies below are explicit;
 items can move into scheduled sprints without changing their scope.
 
@@ -179,30 +179,6 @@ packs instead of hardcoding the sample's string values.
 diagnostics; PHP 5.5 still reports the unavailable syntax.
 Ordinary calls and modern unpacking keep their behavior.
 
-## LP20. Constructor access and explicit calls follow legacy rules
-
-**Impact: High · Complexity: Medium-High**
-
-**Evidence.** PHP 5.5.38 and 5.6.40 accept a child constructor calling
-`parent::__construct(new DateTime())` when the global parent only declares
-`function ParentName(DateTime $value) {}`. PHPantom reports
-`ParentName::__construct() not found`. An explicit arrow call to
-`$object->__construct()` on that same parent really is undefined, so adding
-an ordinary method alias would be incorrect. Separately, constructing a child
-of a class with a private class-name constructor produces a runtime fatal
-error, but no access diagnostic after its arguments are satisfied.
-
-**Plan.** Use the selected constructor and its declaring owner for explicit
-scope calls and constructor visibility checks. Preserve ordinary method
-lookup for arrow calls, and share the result with signatures, navigation,
-and diagnostics. This is deferred from the constructor selection work;
-selection and argument inference alone do not establish that a call is legal.
-
-**Done when.** Valid parent/self constructor calls resolve without a false
-unknown-member diagnostic. Inaccessible construction is diagnosed with own,
-inherited, and trait constructors, with modern `__construct` and PHP 8 controls.
-Runtime fixtures distinguish explicit scope calls from ordinary arrow calls.
-
 ## LP21. Dynamic names preserve writes and scope effects
 
 **Impact: Medium-High · Complexity: High**
@@ -255,7 +231,7 @@ stale types for unknown mutations.
 
 ## LP18. Qualify and document the support contract
 
-**Impact: High · Complexity: Medium · Depends on: LP13, LP15–LP17, LP20–LP22**
+**Impact: High · Complexity: Medium · Depends on: LP13, LP15–LP17, LP21–LP22**
 
 **Plan.** Expand the regression matrix to remaining language and LSP
 surfaces before claiming full support: include/require and manual

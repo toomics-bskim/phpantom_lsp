@@ -159,12 +159,14 @@ impl UnknownMemberPass<'_> {
                 access.member_name,
                 access.is_static,
                 access.is_method_call,
-            ) || has_magic_method_for_access(
-                c,
-                access.is_static,
-                access.is_method_call,
-                self.report_magic,
-            ) || (!access.is_method_call && c.name == "stdClass")
+            ) || (!(access.is_static && access.member_name.eq_ignore_ascii_case("__construct"))
+                && has_magic_method_for_access(
+                    c,
+                    access.is_static,
+                    access.is_method_call,
+                    self.report_magic,
+                ))
+                || (!access.is_method_call && c.name == "stdClass")
                 || (!access.is_method_call && !access.is_static && c.allows_dynamic_properties)
         };
         let class_answers = |c: &Arc<ClassInfo>| {
@@ -384,7 +386,9 @@ impl UnknownMemberPass<'_> {
             has_magic_method_for_access(&base_classes[i], is_static, true, report_magic)
                 || has_magic_method_for_access(&resolved_classes[i], is_static, true, report_magic)
         };
-        let has_magic_call = is_method_call && (0..base_classes.len()).any(has_magic_call_at);
+        let has_magic_call = is_method_call
+            && !(is_static && member_name.eq_ignore_ascii_case("__construct"))
+            && (0..base_classes.len()).any(has_magic_call_at);
         if has_magic_call
             && (is_docblock_ref
                 || !(self.eloquent_rejects_call(

@@ -273,6 +273,31 @@ impl Backend {
         // Pick the first candidate where the member actually exists
         // (directly or via inheritance).
         for target_class in &candidates {
+            if mctx.access_kind == AccessKind::DoubleColon
+                && mctx.access_hint == MemberAccessHint::MethodCall
+                && mctx.member_name.eq_ignore_ascii_case("__construct")
+            {
+                let merged = crate::virtual_members::resolve_class_fully_cached(
+                    target_class,
+                    class_loader,
+                    &self.resolved_class_cache,
+                );
+                if let Some(constructor) = merged.get_constructor() {
+                    let owner = merged
+                        .constructor_owner
+                        .and_then(|name| class_loader(Fqn::new(name.as_str())))
+                        .unwrap_or_else(|| target_class.clone());
+                    let constructor_lookup = MemberLookup {
+                        member_name: &constructor.name,
+                        ..lookup
+                    };
+                    if let Some(location) =
+                        self.member_definition_on_candidate(&constructor_lookup, &owner, &owner)
+                    {
+                        return Some(location);
+                    }
+                }
+            }
             // Candidates from resolve_target_classes may be fully-resolved
             // (merged) classes that include virtual/mixin members directly
             // in their methods list (e.g. when generic args triggered

@@ -687,7 +687,7 @@ pub(crate) fn apply_generic_args(class: &ClassInfo, type_args: &[PhpType]) -> Cl
     let mut result = class.clone();
     let sub_keys: Vec<String> = subs.keys().cloned().collect();
 
-    if let Some(constructor) = &mut result.legacy_constructor {
+    if let Some(constructor) = &mut result.selected_constructor {
         let method_subs = class_scoped_template_values(&subs, constructor.template_params());
         let keys: Vec<String> = method_subs.keys().cloned().collect();
         if method_references_params(constructor, &keys) {
