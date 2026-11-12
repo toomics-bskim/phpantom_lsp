@@ -43,6 +43,8 @@ pub(crate) enum ReferenceIndexKey {
     /// by hand.
     Function(String),
     Constant(String),
+    /// Case-folded candidate key; actual matches still resolve the declaration.
+    ConstantFolded(String),
     Member {
         name: String,
         is_static: bool,
@@ -127,11 +129,20 @@ impl ReferenceIndexKey {
         Self::Function(name)
     }
 
+    pub(crate) fn constant_owned(mut name: String) -> Self {
+        if let Some(end) = name.rfind('\\') {
+            name[..end].make_ascii_lowercase();
+        }
+        Self::Constant(name)
+    }
+
     /// Memory-audit tooling: heap bytes held by the key's name string.
     #[cfg(feature = "mem-audit")]
     pub(crate) fn audit_heap(&self) -> usize {
         match self {
-            Self::Class(s) | Self::Function(s) | Self::Constant(s) => s.capacity(),
+            Self::Class(s) | Self::Function(s) | Self::Constant(s) | Self::ConstantFolded(s) => {
+                s.capacity()
+            }
             Self::Member { name, .. } => name.capacity(),
             Self::StringKey { key, .. } => key.capacity(),
         }
@@ -822,8 +833,66 @@ impl Backend {
     /// Guessing through it would key a constant under a name that names
     /// something else.
     pub(crate) fn constant_fqn_at(&self, uri: &str, offset: u32, name: &str) -> String {
-        self.resolved_name_at(uri, offset)
-            .unwrap_or_else(|| normalize_symbol_name(name))
+        let Some(state) = self.file_state(uri) else {
+            return normalize_symbol_name(name);
+        };
+        let declaration = state
+            .symbol_map
+            .as_ref()
+            .and_then(|map| map.lookup(offset))
+            .is_some_and(|span| {
+                matches!(
+                    span.kind,
+                    SymbolKind::ConstantReference {
+                        is_definition: true,
+                        ..
+                    }
+                )
+            });
+        if declaration {
+            let defines = self.symbols.global_defines.read();
+            for insensitive in [false, true] {
+                let key = crate::constant_index::constant_key(strip_fqn_prefix(name), insensitive);
+                if defines
+                    .get_stored(&key)
+                    .is_some_and(|info| info.file_uri == uri && info.name_offset == offset)
+                {
+                    return key.into_owned();
+                }
+            }
+        }
+        let resolved = state
+            .resolved_names
+            .as_ref()
+            .and_then(|names| names.get(offset));
+        let block = NamespaceSpan::containing(&state.namespaces, offset);
+        // Literal arguments to define/defined/constant name an absolute symbol.
+        let candidates = if resolved.is_none() {
+            [
+                Some(std::borrow::Cow::Borrowed(strip_fqn_prefix(name))),
+                None,
+            ]
+        } else {
+            crate::resolution::constant_candidates(
+                name,
+                resolved,
+                block
+                    .filter(|_| state.namespaces.len() > 1)
+                    .map_or(&state.use_map, |block| &block.use_map),
+                block
+                    .filter(|_| state.namespaces.len() > 1)
+                    .map_or(&state.symbol_imports.constants, |block| {
+                        &block.symbol_imports.constants
+                    }),
+                block.and_then(|block| block.namespace.as_deref()),
+            )
+        };
+        let names = candidates
+            .each_ref()
+            .map(|name| name.as_deref().unwrap_or(""));
+        let names = &names[..1 + usize::from(candidates[1].is_some())];
+        self.constant_identity(names)
+            .unwrap_or_else(|| candidates[0].as_deref().unwrap_or(name).to_string())
     }
 }
 
@@ -917,7 +986,7 @@ fn constant_keys(
 ) -> Vec<(ReferenceIndexKey, bool)> {
     symbol_name_keys(resolved, source_name, global_fallback)
         .into_iter()
-        .map(|(name, counts)| (ReferenceIndexKey::Constant(name), counts))
+        .map(|(name, counts)| (ReferenceIndexKey::constant_owned(name), counts))
         .collect()
 }
 

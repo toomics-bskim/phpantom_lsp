@@ -75,6 +75,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/check-php-compatibility.mjs "$env:PHPANTOM_COMPAT_OUTPUT/constructor-access-$env:PHP_TARGET.json" "$env:RUNNER_TEMP/php-reference/php.exe" $env:PHP_PATCH
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/check-php-compatibility.mjs "$env:PHPANTOM_COMPAT_OUTPUT/constant-names-$env:PHP_TARGET.json" "$env:RUNNER_TEMP/php-reference/php.exe" $env:PHP_PATCH
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/check-php-compatibility.mjs "$env:PHPANTOM_COMPAT_OUTPUT/comparisons-$env:PHP_TARGET.json" "$env:RUNNER_TEMP/php-reference/php.exe" $env:PHP_PATCH
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/check-php-compatibility.mjs "$env:PHPANTOM_COMPAT_OUTPUT/indirection-$env:PHP_TARGET.json" "$env:RUNNER_TEMP/php-reference/php.exe" $env:PHP_PATCH

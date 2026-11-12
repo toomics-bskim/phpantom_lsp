@@ -387,7 +387,13 @@ impl Backend {
             }
             SymbolKind::ConstantReference { name, .. } => {
                 let fqn = self.constant_fqn_at(uri, span.start, name);
-                Some((crate::util::short_name(&fqn).to_string(), false))
+                let insensitive = self
+                    .symbols
+                    .global_defines
+                    .read()
+                    .get_stored(&fqn)
+                    .is_some_and(|info| info.case_insensitive);
+                Some((crate::util::short_name(&fqn).to_string(), insensitive))
             }
             _ => None,
         };

@@ -36,6 +36,7 @@ impl ReferenceFile<'_> {
 
         let mut entries: Vec<(ReferenceIndexKey, bool)> = Vec::new();
         let is_resource = backend.is_resource_uri(uri);
+        let legacy_constants = backend.php_version().major < 8;
         for span in &symbol_map.spans {
             let is_declaration = matches!(
                 &span.kind,
@@ -52,6 +53,12 @@ impl ReferenceFile<'_> {
             );
 
             for (key, counts_as_reference) in self.reference_keys_for_span(is_resource, span) {
+                if legacy_constants && let ReferenceIndexKey::Constant(name) = &key {
+                    entries.push((
+                        ReferenceIndexKey::ConstantFolded(name.to_ascii_lowercase()),
+                        false,
+                    ));
+                }
                 entries.push((key, counts_as_reference && !is_declaration));
             }
         }

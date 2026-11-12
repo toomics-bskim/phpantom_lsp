@@ -9,6 +9,43 @@ use crate::Backend;
 use crate::php_type::PhpType;
 use crate::types::DefineInfo;
 
+/// Candidate declarations for a written constant. Only an unqualified,
+/// unimported name may fall back from its namespace to the global scope.
+pub(crate) fn constant_candidates<'a>(
+    name: &'a str,
+    resolved: Option<&'a str>,
+    imports: &'a std::collections::HashMap<String, String>,
+    constants: &'a std::collections::HashMap<String, String>,
+    namespace: Option<&str>,
+) -> [Option<std::borrow::Cow<'a, str>>; 2] {
+    use std::borrow::Cow;
+    if let Some(absolute) = name.strip_prefix('\\') {
+        return [Some(Cow::Borrowed(absolute)), None];
+    }
+    if !name.contains('\\')
+        && let Some(imported) = constants.get(name)
+    {
+        return [Some(Cow::Borrowed(imported)), None];
+    }
+    let primary = if let Some(resolved) = resolved {
+        Cow::Borrowed(resolved.trim_start_matches('\\'))
+    } else if let Some(relative) = name.strip_prefix("namespace\\") {
+        namespace.map_or(Cow::Borrowed(relative), |ns| {
+            Cow::Owned(format!("{ns}\\{relative}"))
+        })
+    } else if let Some((first, rest)) = name.split_once('\\')
+        && let Some(imported) = crate::names::lookup_import(imports, first)
+    {
+        Cow::Owned(format!("{imported}\\{rest}"))
+    } else {
+        namespace.map_or(Cow::Borrowed(name), |ns| {
+            Cow::Owned(format!("{ns}\\{name}"))
+        })
+    };
+    let fallback = !name.contains('\\') && primary != name;
+    [Some(primary), fallback.then_some(Cow::Borrowed(name))]
+}
+
 /// How far [`Backend::find_or_load_define`] looks for a declaration.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DefineSearch {
@@ -22,6 +59,85 @@ pub(crate) enum DefineSearch {
 }
 
 impl Backend {
+    /// Whether control flow proves this exact constant name is defined.
+    pub(crate) fn constant_is_guarded(
+        &self,
+        uri: &str,
+        content: &str,
+        name: &str,
+        offset: u32,
+    ) -> bool {
+        let Some(state) = self.file_state(uri) else {
+            return false;
+        };
+        let guards = state.constant_guards.get_or_init(|| {
+            std::sync::Arc::new(
+                crate::diagnostics::existence_guards::compute_constant_guards(content),
+            )
+        });
+        let block = crate::types::NamespaceSpan::containing(&state.namespaces, offset);
+        let candidates = constant_candidates(
+            name,
+            state
+                .resolved_names
+                .as_ref()
+                .and_then(|names| names.get(offset)),
+            block
+                .filter(|_| state.namespaces.len() > 1)
+                .map_or(&state.use_map, |block| &block.use_map),
+            block
+                .filter(|_| state.namespaces.len() > 1)
+                .map_or(&state.symbol_imports.constants, |block| {
+                    &block.symbol_imports.constants
+                }),
+            block.and_then(|block| block.namespace.as_deref()),
+        );
+        candidates.iter().flatten().any(|name| {
+            guards
+                .get(crate::constant_index::constant_key(name, false).as_ref())
+                .is_some_and(|ranges| {
+                    ranges
+                        .iter()
+                        .any(|&(start, end)| start <= offset as usize && (offset as usize) < end)
+                })
+        })
+    }
+
+    /// Runtime type of an undefined bare name on PHP versions that still
+    /// convert it to a string. A missing imported name uses its target basename;
+    /// explicitly qualified source names always fail.
+    pub(crate) fn undefined_constant_type(
+        &self,
+        name: &str,
+        uri: Option<&str>,
+        content: &str,
+        offset: u32,
+    ) -> Option<PhpType> {
+        if self.php_version().major >= 8 || name.contains('\\') {
+            return None;
+        }
+        if let Some(uri) = uri {
+            if self.constant_is_guarded(uri, content, name, offset) {
+                return None;
+            }
+            if let Some(state) = self.file_state(uri) {
+                let block = crate::types::NamespaceSpan::containing(&state.namespaces, offset);
+                if let Some(imported) = block
+                    .filter(|_| state.namespaces.len() > 1)
+                    .map_or(&state.symbol_imports.constants, |block| {
+                        &block.symbol_imports.constants
+                    })
+                    .get(name)
+                {
+                    return Some(PhpType::literal_string_value(crate::util::short_name(
+                        imported,
+                    )));
+                }
+            }
+        }
+        Some(PhpType::literal_string_value(name))
+    }
+
     /// Find the `define()` or top-level `const` declaring one of
     /// `candidates` in project or vendor code, and return what `read`
     /// takes from it.
@@ -35,8 +151,8 @@ impl Backend {
     ///    known autoload file not parsed yet.
     ///
     /// The candidates are names in the order PHP would try them (see
-    /// [`Self::lookup_global_constant_candidates`]), and each phase is
-    /// tried for every candidate before the next, more expensive one runs.
+    /// [`Self::lookup_global_constant_candidates`]), and indexed declarations are
+    /// tried in that order before the exhaustive file scan.
     /// The embedded stubs are not searched: what they declare has no file
     /// a declaration can be read back out of.
     pub(crate) fn find_or_load_define<T>(
@@ -45,37 +161,56 @@ impl Backend {
         search: DefineSearch,
         read: impl Fn(&DefineInfo) -> T,
     ) -> Option<T> {
-        // A stub path's declaration wins over every other.
-        if let Some(found) = self.load_external_stub_define(candidates, &read) {
-            return Some(found);
-        }
-
         let find_parsed = || {
             let dmap = self.symbols.global_defines.read();
-            candidates
-                .iter()
-                .find_map(|name| dmap.get(*name).map(&read))
+            candidates.iter().find_map(|name| dmap.get(name).map(&read))
         };
-
-        // Phase 1: already-parsed constants.
-        if let Some(found) = find_parsed() {
-            return Some(found);
-        }
-
-        // Phase 2: autoload constant index — lazily parse the file.
         for name in candidates {
+            if let Some(found) = self.load_external_stub_define(&[name], &read) {
+                return Some(found);
+            }
+            if let Some(found) = self.symbols.global_defines.read().get(name).map(&read) {
+                return Some(found);
+            }
             let path = self
                 .symbols
                 .autoload_constant_index
                 .read()
-                .get(*name)
+                .get(name)
                 .cloned();
-            if let Some(path) = path
-                && let Some(content) = crate::util::read_php_source(&path)
-            {
-                self.update_ast(&crate::util::path_to_uri(&path), &content);
-                if let Some(found) = self.symbols.global_defines.read().get(*name).map(&read) {
-                    return Some(found);
+            if let Some(path) = path {
+                let uri = crate::util::path_to_uri(&path);
+                if !self.parsed_uris.read().contains(&uri)
+                    && let Some(content) = crate::util::read_php_source(&path)
+                {
+                    self.update_ast(&uri, &content);
+                    if let Some(found) = self.symbols.global_defines.read().get(name).map(&read) {
+                        return Some(found);
+                    }
+                }
+            }
+            if self.php_version().major < 8 {
+                let mut paths: Vec<_> = self
+                    .symbols
+                    .autoload_constant_index
+                    .read()
+                    .case_variants(name)
+                    .cloned()
+                    .collect();
+                paths.sort_unstable();
+                paths.dedup();
+                for path in paths {
+                    let uri = crate::util::path_to_uri(&path);
+                    if self.parsed_uris.read().contains(&uri) {
+                        continue;
+                    }
+                    if let Some(content) = crate::util::read_php_source(&path) {
+                        self.update_ast(&uri, &content);
+                        if let Some(found) = self.symbols.global_defines.read().get(name).map(&read)
+                        {
+                            return Some(found);
+                        }
+                    }
                 }
             }
         }
@@ -152,61 +287,96 @@ impl Backend {
     /// [`Backend::resolve_constant_name_at`](crate::Backend), which is what
     /// knows the file.
     ///
-    /// Each phase is tried for every candidate before the next, more
-    /// expensive one runs, so a bare name that exists globally is never
-    /// paid for with a full autoload parse looking for the namespaced
-    /// spelling.
+    /// Indexed declarations and built-ins are checked in candidate order.
+    /// Only a miss across all candidates requires an exhaustive autoload scan.
     pub(crate) fn lookup_global_constant_candidates(
         &self,
         candidates: &[&str],
     ) -> Option<Option<String>> {
-        // The stubs record the version of the PHP build they were generated
-        // on (`PHP_VERSION_ID` 50306); the one the project runs on is the
-        // configured version, down to the minor.
         for name in candidates {
             if let Some(value) = self.php_version_constant(name) {
                 return Some(value);
             }
-        }
-
-        if let Some((value, namespace)) =
-            self.find_or_load_define(candidates, DefineSearch::Exhaustive, |info| {
-                (info.value.clone(), info.namespace)
-            })
-        {
-            return Some(match (value, namespace) {
-                (Some(value), Some(namespace)) => {
-                    Some(self.qualify_value_constants(value, &namespace))
-                }
-                (value, _) => value,
-            });
-        }
-
-        // Built-in PHP constants from embedded stubs.  Parse the stub via
-        // update_ast (which populates global_defines), then re-check.  This
-        // is the same lazy-parse pattern as the project files above — no
-        // special raw-source scanning needed.
-        for name in candidates {
+            if let Some((value, namespace, imports)) =
+                self.find_or_load_define(&[name], DefineSearch::Indexed, |info| {
+                    (
+                        info.value.clone(),
+                        info.namespace,
+                        info.constant_imports.clone(),
+                    )
+                })
+            {
+                return Some(self.prepare_define_value(value, namespace, imports.as_deref()));
+            }
             let stub_source = self.stub_constant_index.read().get(*name).copied();
-            if let Some(stub_source) = stub_source {
-                let stub_uri = format!("{}const/{}", crate::stubs::STUB_URI_PREFIX, name);
-                self.update_ast(&stub_uri, stub_source);
-                let lookup = self
-                    .symbols
-                    .global_defines
-                    .read()
-                    .get(*name)
-                    .map(|info| info.value.clone());
-                if lookup.is_some() {
-                    return lookup;
-                }
-                // Stub was parsed but constant not found in global_defines —
-                // it exists in the index, so report it with unknown value.
-                return Some(None);
+            if let Some(source) = stub_source {
+                self.update_ast(
+                    &format!("{}const/{}", crate::stubs::STUB_URI_PREFIX, name),
+                    source,
+                );
+                return Some(
+                    self.symbols
+                        .global_defines
+                        .read()
+                        .get(name)
+                        .and_then(|info| info.value.clone()),
+                );
             }
         }
+        self.find_or_load_define(candidates, DefineSearch::Exhaustive, |info| {
+            (
+                info.value.clone(),
+                info.namespace,
+                info.constant_imports.clone(),
+            )
+        })
+        .map(|(value, namespace, imports)| {
+            self.prepare_define_value(value, namespace, imports.as_deref())
+        })
+    }
 
-        None
+    fn prepare_define_value(
+        &self,
+        value: Option<String>,
+        namespace: Option<crate::atom::Atom>,
+        imports: Option<&std::collections::HashMap<String, String>>,
+    ) -> Option<String> {
+        value.map(|value| {
+            if namespace.is_some() || self.php_version().major < 8 {
+                self.qualify_value_constants(value, namespace.as_deref(), imports)
+            } else {
+                value
+            }
+        })
+    }
+
+    pub(crate) fn constant_identity(&self, candidates: &[&str]) -> Option<String> {
+        let name = self.declared_constant_name(candidates)?;
+        let defines = self.symbols.global_defines.read();
+        Some(defines.resolved_key(name).unwrap_or(name).to_string())
+    }
+
+    /// Test existence without evaluating the declaration's initializer.
+    pub(crate) fn constant_is_declared_at(
+        &self,
+        name: &str,
+        offset: u32,
+        file: &crate::types::FileContext,
+    ) -> bool {
+        let candidates = constant_candidates(
+            name,
+            file.resolved_names
+                .as_ref()
+                .and_then(|names| names.get(offset)),
+            file.use_map_at(offset),
+            &file.symbol_imports_at(offset).constants,
+            file.namespace_at(offset).as_deref(),
+        );
+        let names = candidates
+            .each_ref()
+            .map(|name| name.as_deref().unwrap_or(""));
+        let names = &names[..1 + usize::from(candidates[1].is_some())];
+        self.declared_constant_name(names).is_some()
     }
 
     /// `value`, a constant's initializer written in `namespace`, with each
@@ -216,11 +386,29 @@ impl Backend {
     ///
     /// Whoever reads the value has a namespace of its own, or none, so the
     /// choice is made here, where the one it was written in is known.
-    fn qualify_value_constants(&self, value: String, namespace: &str) -> String {
-        crate::parser::qualify_unqualified_constant_names(&value, |name| {
-            let namespaced = format!("{namespace}\\{name}");
-            self.declared_constant_name(&[&namespaced, name])
-                .map(str::to_owned)
+    fn qualify_value_constants(
+        &self,
+        value: String,
+        namespace: Option<&str>,
+        imports: Option<&std::collections::HashMap<String, String>>,
+    ) -> String {
+        crate::parser::rewrite_unqualified_constant_reads(&value, |name| {
+            if let Some(imported) = imports.and_then(|imports| imports.get(name)) {
+                return Some(if self.declared_constant_name(&[imported]).is_some() {
+                    format!("\\{imported}")
+                } else {
+                    PhpType::literal_string_value(crate::util::short_name(imported)).to_string()
+                });
+            }
+            let qualified = namespace.map(|ns| format!("{ns}\\{name}"));
+            let names = [qualified.as_deref().unwrap_or(name), name];
+            let names = &names[..1 + usize::from(qualified.is_some())];
+            self.declared_constant_name(names)
+                .map(|name| format!("\\{name}"))
+                .or_else(|| {
+                    (self.php_version().major < 8)
+                        .then(|| PhpType::literal_string_value(name).to_string())
+                })
         })
         .unwrap_or(value)
     }
@@ -230,26 +418,22 @@ impl Backend {
     /// without reading its value.  Reading it could qualify the names in it
     /// in turn, and two constants naming each other would never finish.
     fn declared_constant_name<'c>(&self, candidates: &[&'c str]) -> Option<&'c str> {
-        if let Some(&name) = candidates
-            .iter()
-            .find(|name| self.php_version_constant(name).is_some())
-        {
-            return Some(name);
-        }
-        if self
-            .find_or_load_define(candidates, DefineSearch::Exhaustive, |_| ())
-            .is_some()
-        {
-            let defines = self.symbols.global_defines.read();
-            if let Some(&name) = candidates.iter().find(|name| defines.contains_key(**name)) {
+        for &name in candidates {
+            if self.php_version_constant(name).is_some()
+                || self
+                    .find_or_load_define(&[name], DefineSearch::Indexed, |_| ())
+                    .is_some()
+                || self.stub_constant_index.read().contains_key(name)
+            {
                 return Some(name);
             }
         }
-        let stubs = self.stub_constant_index.read();
+        self.find_or_load_define(candidates, DefineSearch::Exhaustive, |_| ())?;
+        let defines = self.symbols.global_defines.read();
         candidates
             .iter()
             .copied()
-            .find(|name| stubs.contains_key(name))
+            .find(|name| defines.contains_key(name))
     }
 
     /// The value of a constant that describes the running PHP version, or
@@ -279,15 +463,15 @@ impl Backend {
     /// (`key-of<X>`, `X[K]`), where `X` is usually a template parameter and
     /// every miss would charge the whole autoload set.
     pub(crate) fn lookup_indexed_global_constant(&self, name: &str) -> Option<String> {
-        let (value, namespace) =
+        let (value, namespace, imports) =
             self.find_or_load_define(&[name], DefineSearch::Indexed, |info| {
-                (info.value.clone(), info.namespace)
+                (
+                    info.value.clone(),
+                    info.namespace,
+                    info.constant_imports.clone(),
+                )
             })?;
-        let value = value?;
-        Some(match namespace {
-            Some(namespace) => self.qualify_value_constants(value, &namespace),
-            None => value,
-        })
+        self.prepare_define_value(value, namespace, imports.as_deref())
     }
 }
 

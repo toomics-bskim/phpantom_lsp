@@ -8,6 +8,7 @@ use std::sync::Arc;
 use parking_lot::{Mutex, RwLock};
 
 use crate::ci_map::CiMap;
+use crate::constant_index::ConstantIndex;
 use crate::types::{ClassInfo, DefineInfo, FunctionInfo};
 use crate::{Backend, ClassCompletionOrigin, composer};
 
@@ -73,7 +74,7 @@ impl Backend {
 
     /// Borrow the global defines mutex (used by integration tests to
     /// inject user-defined constants or inspect the cache).
-    pub fn global_defines(&self) -> &Arc<RwLock<HashMap<String, DefineInfo>>> {
+    pub fn global_defines(&self) -> &Arc<RwLock<ConstantIndex<DefineInfo>>> {
         &self.symbols.global_defines
     }
 
@@ -143,7 +144,7 @@ impl Backend {
 
     /// Borrow the autoload constant index (used by integration tests to
     /// populate discovered constant entries for non-Composer projects).
-    pub fn autoload_constant_index(&self) -> &Arc<RwLock<HashMap<String, PathBuf>>> {
+    pub fn autoload_constant_index(&self) -> &Arc<RwLock<ConstantIndex<PathBuf>>> {
         &self.symbols.autoload_constant_index
     }
 

@@ -178,15 +178,22 @@ impl Backend {
                             trimmed,
                             None,
                             0,
-                            span.map_or(&state.use_map, |span| &span.use_map),
-                            span.map_or(&state.symbol_imports.constants, |span| {
-                                &span.symbol_imports.constants
-                            }),
+                            span.filter(|_| state.namespaces.len() > 1)
+                                .map_or(&state.use_map, |span| &span.use_map),
+                            span.filter(|_| state.namespaces.len() > 1)
+                                .map_or(&state.symbol_imports.constants, |span| {
+                                    &span.symbol_imports.constants
+                                }),
                             span.map_or(&None, |span| &span.namespace),
                         )
                     },
                 ) {
-                None => None,
+                None => backend.undefined_constant_type(
+                    trimmed,
+                    ctx.file.uri,
+                    ctx.file.content,
+                    ctx.cursor_offset,
+                ),
                 Some(Some(value)) => {
                     crate::type_engine::variable::rhs_resolution::infer_type_from_constant_value(
                         &value,

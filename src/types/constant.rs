@@ -96,6 +96,12 @@ impl ConstantInfo {
 /// value) and go-to-definition support.
 #[derive(Debug, Clone)]
 pub struct DefineInfo {
+    /// Whether this declaration uses PHP's legacy case-insensitive names.
+    pub case_insensitive: bool,
+    /// Imports retained by legacy initializers: a missing imported bare
+    /// name becomes its target basename, unlike an explicitly qualified read.
+    /// Shared by declarations in the same namespace block.
+    pub constant_imports: Option<std::sync::Arc<std::collections::HashMap<String, String>>>,
     /// The `file://` URI of the file where the constant was defined.
     pub file_uri: String,
     /// Byte offset of the `define` keyword or `const` keyword in the source
@@ -107,7 +113,9 @@ pub struct DefineInfo {
     /// `None` when the value could not be extracted.
     ///
     /// The classes it names, and the constants that have one meaning, are
-    /// spelled fully qualified (see `qualify_constant_names`).
+    /// spelled fully qualified (see `qualify_constant_names`). Legacy
+    /// imported bare names retain the imports in `constant_imports` so
+    /// their missing-name fallback remains distinct from qualified reads.
     pub value: Option<String>,
     /// The namespace the value was written in, where an unqualified
     /// constant name in it means that namespace's constant when there is

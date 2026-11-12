@@ -44,6 +44,7 @@ pub(crate) fn compute_isset_empty_argument_ranges(content: &str) -> Vec<ByteRang
 /// because the developer explicitly checked for its existence.
 #[derive(Default)]
 pub(crate) struct ExistenceGuards {
+    pub constant_guards: ConstantGuards,
     /// Function names guarded by `function_exists('name')`.
     /// Maps function name (lowercase) to list of guarded byte ranges.
     pub function_guards: HashMap<String, Vec<ByteRange>>,
@@ -54,6 +55,8 @@ pub(crate) struct ExistenceGuards {
     /// Maps method name (lowercase) to list of guarded byte ranges.
     pub method_guards: HashMap<String, Vec<ByteRange>>,
 }
+
+pub(crate) type ConstantGuards = HashMap<String, Vec<ByteRange>>;
 
 impl ExistenceGuards {
     /// Check whether a function call at `offset` is guarded by `function_exists()`.
@@ -109,6 +112,15 @@ fn in_any(ranges: &[ByteRange], offset: u32) -> bool {
 /// exits early (`if (!function_exists('f')) { return; }`): then it guards
 /// the rest of the enclosing block.
 pub(crate) fn compute_existence_guards(content: &str) -> ExistenceGuards {
+    compute_guards(content, false)
+}
+
+/// Constant proofs are cached per file and need no class or function maps.
+pub(crate) fn compute_constant_guards(content: &str) -> ConstantGuards {
+    compute_guards(content, true).constant_guards
+}
+
+fn compute_guards(content: &str, constants_only: bool) -> ExistenceGuards {
     crate::parser::with_parsed_program(content, "existence_guards", |program, _| {
         let mut guards = ExistenceGuards::default();
         let file_end = content.len();
@@ -116,9 +128,26 @@ pub(crate) fn compute_existence_guards(content: &str) -> ExistenceGuards {
             let Node::FunctionCall(call) = node else {
                 return;
             };
-            let Some((kind, name)) = existence_check(call) else {
+            let Some((kind, name)) = existence_check(call, constants_only) else {
                 return;
             };
+            if matches!(kind, ExistenceKind::Constant) {
+                let ranges = constant_guard_ranges(call.span(), ancestors, file_end);
+                if !ranges.is_empty() {
+                    guards
+                        .constant_guards
+                        .entry(
+                            crate::constant_index::constant_key(
+                                name.trim_start_matches('\\'),
+                                false,
+                            )
+                            .into_owned(),
+                        )
+                        .or_default()
+                        .extend(ranges);
+                }
+                return;
+            }
             let Some(range) = guarded_range(call.span(), ancestors, file_end) else {
                 return;
             };
@@ -126,6 +155,11 @@ pub(crate) fn compute_existence_guards(content: &str) -> ExistenceGuards {
                 ExistenceKind::Function => (&mut guards.function_guards, name.to_lowercase()),
                 ExistenceKind::Class => (&mut guards.class_guards, name),
                 ExistenceKind::Method => (&mut guards.method_guards, name.to_lowercase()),
+                ExistenceKind::Constant => (
+                    &mut guards.constant_guards,
+                    crate::constant_index::constant_key(name.trim_start_matches('\\'), false)
+                        .into_owned(),
+                ),
             };
             map.entry(key).or_default().push(range);
         });
@@ -133,8 +167,120 @@ pub(crate) fn compute_existence_guards(content: &str) -> ExistenceGuards {
     })
 }
 
+/// A `defined` result proves existence only on branches that require it.
+/// In particular, an OR condition and an arbitrary call argument do not
+/// make subsequent reads safe.
+fn constant_guard_ranges(
+    call: mago_span::Span,
+    ancestors: &[Node<'_, '_>],
+    file_end: usize,
+) -> Vec<ByteRange> {
+    let mut ranges = Vec::new();
+    let mut positive = true;
+    let mut negative = false;
+    for (depth, node) in ancestors.iter().enumerate().rev() {
+        match node {
+            Node::Expression(_) | Node::Call(_) | Node::Parenthesized(_) => {}
+            Node::UnaryPrefix(prefix) if matches!(prefix.operator, UnaryPrefixOperator::Not(_)) => {
+                std::mem::swap(&mut positive, &mut negative);
+            }
+            Node::Binary(binary) => {
+                let in_left = call.end.offset <= binary.lhs.span().end.offset;
+                match binary.operator {
+                    BinaryOperator::And(_) | BinaryOperator::LowAnd(_) => {
+                        if positive && in_left {
+                            ranges.push((
+                                binary.rhs.span().start.offset as usize,
+                                binary.rhs.span().end.offset as usize,
+                            ));
+                        }
+                        negative = false;
+                    }
+                    BinaryOperator::Or(_) | BinaryOperator::LowOr(_) => {
+                        if negative && in_left {
+                            ranges.push((
+                                binary.rhs.span().start.offset as usize,
+                                binary.rhs.span().end.offset as usize,
+                            ));
+                        }
+                        positive = false;
+                    }
+                    _ => {
+                        positive = false;
+                        negative = false;
+                    }
+                }
+            }
+            Node::Conditional(conditional)
+                if call.end.offset <= conditional.condition.span().end.offset =>
+            {
+                let branch = if positive {
+                    conditional.then
+                } else if negative {
+                    Some(conditional.r#else)
+                } else {
+                    None
+                };
+                if let Some(branch) = branch {
+                    ranges.push((
+                        branch.span().start.offset as usize,
+                        branch.span().end.offset as usize,
+                    ));
+                }
+                break;
+            }
+            Node::If(statement) if call.end.offset <= statement.condition.span().end.offset => {
+                let body = match &statement.body {
+                    IfBody::Statement(body) => ThenBody::Statement(body.statement),
+                    IfBody::ColonDelimited(body) => {
+                        ThenBody::Statements(body.statements.as_slice())
+                    }
+                };
+                if positive {
+                    let (start, end) = body.range();
+                    ranges.push((start, end));
+                }
+                if negative && body.exits_early() {
+                    let end = ancestors[..depth]
+                        .iter()
+                        .rev()
+                        .find_map(|node| match node {
+                            Node::Block(block) => Some(block.right_brace.start.offset as usize),
+                            _ => None,
+                        })
+                        .unwrap_or(file_end);
+                    ranges.push((statement.span().end.offset as usize, end));
+                }
+                break;
+            }
+            Node::IfStatementBodyElseIfClause(clause)
+                if call.end.offset <= clause.condition.span().end.offset =>
+            {
+                if positive {
+                    ranges.push((
+                        clause.statement.span().start.offset as usize,
+                        clause.statement.span().end.offset as usize,
+                    ));
+                }
+                break;
+            }
+            Node::IfColonDelimitedBodyElseIfClause(clause)
+                if call.end.offset <= clause.condition.span().end.offset =>
+            {
+                if positive {
+                    ranges.push(ThenBody::Statements(clause.statements.as_slice()).range());
+                }
+                break;
+            }
+            _ => break,
+        }
+    }
+    ranges
+}
+
 /// The kind of existence check detected.
 enum ExistenceKind {
+    Constant,
     Function,
     Class,
     Method,
@@ -142,13 +288,21 @@ enum ExistenceKind {
 
 /// The kind of check `call` is and the name it checks, or `None` when it is
 /// not an existence check naming a symbol literally.
-fn existence_check(call: &FunctionCall<'_>) -> Option<(ExistenceKind, String)> {
+fn existence_check(
+    call: &FunctionCall<'_>,
+    constants_only: bool,
+) -> Option<(ExistenceKind, String)> {
     let Expression::Identifier(function) = call.function else {
         return None;
     };
     let function = bytes_to_str(function.value());
     let function = function.strip_prefix('\\').unwrap_or(function);
-    let (kind, position) = if function.eq_ignore_ascii_case("function_exists") {
+    if function.eq_ignore_ascii_case("defined") != constants_only {
+        return None;
+    }
+    let (kind, position) = if function.eq_ignore_ascii_case("defined") {
+        (ExistenceKind::Constant, 0)
+    } else if function.eq_ignore_ascii_case("function_exists") {
         (ExistenceKind::Function, 0)
     } else if function.eq_ignore_ascii_case("class_exists") {
         (ExistenceKind::Class, 0)
@@ -274,6 +428,22 @@ enum ThenBody<'ast, 'arena> {
 }
 
 impl ThenBody<'_, '_> {
+    fn range(&self) -> ByteRange {
+        match self {
+            Self::Statement(statement) => (
+                statement.span().start.offset as usize,
+                statement.span().end.offset as usize,
+            ),
+            Self::Statements(statements) => (
+                statements
+                    .first()
+                    .map_or(0, |statement| statement.span().start.offset as usize),
+                statements
+                    .last()
+                    .map_or(0, |statement| statement.span().end.offset as usize),
+            ),
+        }
+    }
     /// Whether the branch leaves at once: its first statement returns,
     /// throws, exits, or jumps out of a loop.
     fn exits_early(&self) -> bool {

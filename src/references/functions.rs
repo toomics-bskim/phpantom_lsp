@@ -96,34 +96,6 @@ impl Backend {
             &candidate_keys,
             "Scanning for constant references",
             |file, symbol_map, locations| {
-                // An import names the constant qualified and a use of it
-                // names it plainly, so the span text alone cannot decide
-                // whether this file matches -- the resolved name can.
-                let resolved_names = self
-                    .file_state(file.uri())
-                    .and_then(|state| state.resolved_names.clone());
-                let constant_matches = |name: &str, offset: u32| -> bool {
-                    let resolved = resolved_names
-                        .as_ref()
-                        .and_then(|rn| rn.get(offset))
-                        .map(strip_fqn_prefix)
-                        .unwrap_or(strip_fqn_prefix(name));
-                    if resolved == target {
-                        return true;
-                    }
-                    // PHP falls back from an unqualified reference to the
-                    // global constant of the same name only once the
-                    // namespace-qualified guess above turns out not to be
-                    // declared anywhere; a qualified reference, or a target
-                    // that itself lives in a namespace, can never be reached
-                    // this way, so a sibling-namespace constant of the same
-                    // short name is never treated as a match.
-                    !name.contains('\\')
-                        && !target.contains('\\')
-                        && crate::util::short_name(resolved) == target_short
-                        && !self.symbols.global_defines.read().contains_key(resolved)
-                };
-
                 for span in &symbol_map.spans {
                     let matched = match &span.kind {
                         SymbolKind::ConstantReference {
@@ -131,7 +103,7 @@ impl Backend {
                             is_definition,
                         } => {
                             (!*is_definition || include_declaration)
-                                && constant_matches(name, span.start)
+                                && self.constant_fqn_at(file.uri(), span.start, name) == target
                         }
                         _ => false,
                     };

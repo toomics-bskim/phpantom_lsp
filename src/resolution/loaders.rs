@@ -481,47 +481,21 @@ impl Backend {
         constant_imports: &HashMap<String, String>,
         namespace: &Option<String>,
     ) -> Option<Option<String>> {
-        // A leading backslash is an explicit absolute reference: it names
-        // exactly one constant, with no namespace or import in play.
-        if let Some(absolute) = name.strip_prefix('\\') {
-            return self.lookup_global_constant_candidates(&[absolute]);
-        }
-
-        // `offset == 0` is the "no offset available" sentinel (no PHP
-        // constant identifier ever starts at byte 0, before `<?php`).
-        let offset_resolved: Option<&str> = if offset != 0 {
-            resolved_names.and_then(|rn| rn.get(offset))
-        } else {
-            None
-        };
-
-        // Import-table resolution, for the paths that have no resolved
-        // names: a bare name may be a `use const` alias, and the first
-        // segment of a qualified name may be an imported namespace.
-        let use_resolved: Option<String> = match name.split_once('\\') {
-            Some((first, rest)) => {
-                crate::names::lookup_import(use_map, first).map(|fqn| format!("{fqn}\\{rest}"))
-            }
-            None => constant_imports.get(name).cloned(),
-        };
-        let ns_qualified: Option<String> = namespace.as_ref().map(|ns| format!("{ns}\\{name}"));
-
-        let mut candidates: Vec<&str> = Vec::with_capacity(4);
-        if let Some(r) = offset_resolved {
-            candidates.push(r);
-        }
-        if let Some(ref fqn) = use_resolved {
-            candidates.push(fqn.as_str());
-        }
-        if let Some(ref nq) = ns_qualified {
-            candidates.push(nq.as_str());
-        }
-        // The global fallback runs last: PHP only reaches it once the
-        // namespace-local name has failed.
-        candidates.push(name);
-        candidates.dedup();
-
-        self.lookup_global_constant_candidates(&candidates)
+        let resolved = (offset != 0)
+            .then(|| resolved_names.and_then(|names| names.get(offset)))
+            .flatten();
+        let candidates = super::constants::constant_candidates(
+            name,
+            resolved,
+            use_map,
+            constant_imports,
+            namespace.as_deref(),
+        );
+        let names = candidates
+            .each_ref()
+            .map(|name| name.as_deref().unwrap_or(""));
+        let names = &names[..1 + usize::from(candidates[1].is_some())];
+        self.lookup_global_constant_candidates(names)
     }
 
     /// The member that an unqualified `@see` reference at `offset` names on

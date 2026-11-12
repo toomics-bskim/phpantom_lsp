@@ -1262,12 +1262,26 @@ pub(crate) fn report(backend: &Backend, runner_content_bytes: usize) {
     let mut def_overhead = Sz::default();
     {
         let defines = backend.symbols.global_defines.read();
-        def_overhead += map_buckets::<String, crate::types::DefineInfo>(defines.capacity());
-        for (k, d) in defines.iter() {
-            def_overhead.add(k.capacity());
-            def_overhead.add(d.file_uri.capacity());
-            if let Some(v) = &d.value {
-                def_overhead.add(v.capacity());
+        def_overhead.add(
+            defines.audit_heap(|d| {
+                d.file_uri.capacity() + d.value.as_ref().map_or(0, String::capacity)
+            }),
+        );
+        let mut seen_imports = HashSet::new();
+        for imports in defines
+            .values()
+            .filter_map(|define| define.constant_imports.as_ref())
+        {
+            if seen_imports.insert(Arc::as_ptr(imports)) {
+                def_overhead.add(
+                    size_of::<HashMap<String, String>>()
+                        + 2 * size_of::<usize>()
+                        + imports.capacity() * (size_of::<(String, String)>() + 1)
+                        + imports
+                            .iter()
+                            .map(|(alias, name)| alias.capacity() + name.capacity())
+                            .sum::<usize>(),
+                );
             }
         }
     }
@@ -1306,6 +1320,15 @@ pub(crate) fn report(backend: &Backend, runner_content_bytes: usize) {
             for (k, v) in im {
                 imports.add(k.capacity());
                 imports.add(v.capacity());
+            }
+            if let Some(guards) = state.constant_guards.get() {
+                imports
+                    .add(ARC + size_of::<crate::diagnostics::existence_guards::ConstantGuards>());
+                imports += map_buckets::<String, Vec<(usize, usize)>>(guards.capacity());
+                for (name, ranges) in guards.iter() {
+                    imports.add(name.capacity());
+                    imports.add(ranges.capacity() * size_of::<(usize, usize)>());
+                }
             }
         }
     }
@@ -1640,11 +1663,7 @@ pub(crate) fn report(backend: &Backend, runner_content_bytes: usize) {
     );
     {
         let m = backend.symbols.autoload_constant_index.read();
-        misc += map_buckets::<String, std::path::PathBuf>(m.capacity());
-        for (k, p) in m.iter() {
-            misc.add(k.capacity());
-            misc.add(p.as_os_str().len());
-        }
+        misc.add(m.audit_heap(|p| p.as_os_str().len()));
     }
     {
         let m = backend.symbols.autoload_file_paths.read();
@@ -1875,6 +1894,9 @@ pub(crate) fn report(backend: &Backend, runner_content_bytes: usize) {
     });
     probe("parse_errors", &mut || {
         clear_file_state_field(backend, |state| state.parse_errors = Default::default())
+    });
+    probe("constant existence guards", &mut || {
+        clear_file_state_field(backend, |state| state.constant_guards = Default::default())
     });
     probe("file_namespaces", &mut || {
         clear_file_state_field(backend, |state| state.namespaces = Default::default())

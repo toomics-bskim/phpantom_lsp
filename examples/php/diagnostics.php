@@ -29,6 +29,13 @@ class PhpVersionDiagnosticsDemo
     {
         return count($items);
     }
+
+    public function readMissingConstant()
+    {
+        // Try: this undefined constant is an error on PHP 8. With a PHP 5.5
+        // or 5.6 target, the diagnostic becomes informational.
+        return DEMO_UNDEFINED_CONSTANT;
+    }
 }
 
 // ── Deprecation Messages ────────────────────────────────────────────────────

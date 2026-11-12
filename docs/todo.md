@@ -201,7 +201,6 @@ source syntax, runtime semantics, built-ins, and editor behavior.
 
 | # | Item | Impact | Complexity |
 | --- | --- | --- | --- |
-| LP13 | [Legacy constant lookup preserves name rules](todo/legacy-php.md#lp13-legacy-constant-lookup-preserves-name-rules) | Medium | Medium-High |
 | LP15 | [Returned closures retain their bound receiver type](todo/legacy-php.md#lp15-returned-closures-retain-their-bound-receiver-type) | Medium | High |
 | LP16 | [Unannotated generators infer yielded values](todo/legacy-php.md#lp16-unannotated-generators-infer-yielded-values) | Medium | High |
 | LP17 | [Variadic and unpacked calls carry argument types](todo/legacy-php.md#lp17-variadic-and-unpacked-calls-carry-argument-types) | Medium-High | High |

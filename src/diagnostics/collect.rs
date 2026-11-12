@@ -84,6 +84,10 @@ static SLOW_COLLECTORS: &[SlowCollector] = &[
         Backend::collect_unknown_function_diagnostics_with_context,
     ),
     always(
+        "unknown_constant",
+        Backend::collect_unknown_constant_diagnostics_with_context,
+    ),
+    always(
         "argument_count_mismatch",
         Backend::collect_argument_count_diagnostics_with_context,
     ),

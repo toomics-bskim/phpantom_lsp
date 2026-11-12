@@ -1,8 +1,8 @@
 //! Case-insensitive maps for PHP symbol names.
 //!
 //! PHP resolves class, interface, trait, enum, function, and namespace
-//! names case-insensitively; only constants, variables, and properties
-//! are case-sensitive.  [`CiMap`] and [`CiSet`] key their entries by the
+//! names case-insensitively; ordinary constant basenames, variables, and
+//! properties are case-sensitive. [`CiMap`] and [`CiSet`] key their entries by the
 //! ASCII-lowercased name (PHP identifier folding is ASCII-only) while
 //! [`CiMap`] preserves the original spelling for iteration, so lookups
 //! follow PHP semantics without losing the canonical casing that
@@ -10,7 +10,8 @@
 //!
 //! Do **not** use these for constant indexes (`global_defines`,
 //! `stub_constant_index`) or property lookups — those are
-//! case-sensitive in PHP.
+//! case-sensitive in PHP. [`crate::constant_index::ConstantIndex`] handles
+//! namespace folding and the explicit legacy `define` case flag separately.
 
 use std::borrow::Cow;
 use std::collections::HashMap;

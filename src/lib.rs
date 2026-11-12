@@ -272,6 +272,7 @@ mod code_lens;
 pub mod completion;
 pub mod composer;
 pub mod config;
+pub mod constant_index;
 mod container_calls;
 mod definition;
 pub mod diagnostics;

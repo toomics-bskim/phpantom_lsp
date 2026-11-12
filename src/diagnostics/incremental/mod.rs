@@ -134,7 +134,16 @@ pub(crate) enum FullPassReason {
 struct DeclarationSnapshot {
     classes: Vec<Arc<ClassInfo>>,
     functions: Vec<String>,
-    constants: Vec<(String, Option<String>)>,
+    constants: Vec<ConstantDeclarationSnapshot>,
+}
+
+#[derive(PartialEq, Eq)]
+struct ConstantDeclarationSnapshot {
+    name: String,
+    value: Option<String>,
+    namespace: Option<crate::atom::Atom>,
+    case_insensitive: bool,
+    imports: Option<Arc<std::collections::HashMap<String, String>>>,
 }
 
 impl DeclarationSnapshot {
@@ -160,20 +169,25 @@ impl DeclarationSnapshot {
             .cloned()
             .unwrap_or_default();
         functions.sort_unstable();
-        let mut constants: Vec<(String, Option<String>)> = {
+        let mut constants: Vec<ConstantDeclarationSnapshot> = {
             let defines = backend.symbols.global_defines.read();
             constant_names
                 .into_iter()
                 .map(|name| {
-                    let value = defines
-                        .get(&name)
-                        .filter(|define| define.file_uri == uri)
-                        .and_then(|define| define.value.clone());
-                    (name, value)
+                    let info = defines
+                        .get_stored(&name)
+                        .filter(|define| define.file_uri == uri);
+                    ConstantDeclarationSnapshot {
+                        name,
+                        value: info.and_then(|define| define.value.clone()),
+                        namespace: info.and_then(|define| define.namespace),
+                        case_insensitive: info.is_some_and(|define| define.case_insensitive),
+                        imports: info.and_then(|define| define.constant_imports.clone()),
+                    }
                 })
                 .collect()
         };
-        constants.sort_unstable();
+        constants.sort_unstable_by(|a, b| a.name.cmp(&b.name));
         Self {
             classes,
             functions,

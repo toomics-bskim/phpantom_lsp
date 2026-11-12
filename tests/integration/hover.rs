@@ -6149,6 +6149,8 @@ fn hover_define_constant_no_value_still_works() {
         dmap.insert(
             "LEGACY_CONST".to_string(),
             phpantom_lsp::DefineInfo {
+                case_insensitive: false,
+                constant_imports: None,
                 file_uri: "file:///legacy.php".to_string(),
                 name_offset: 0,
                 value: None,

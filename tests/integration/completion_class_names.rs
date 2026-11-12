@@ -285,6 +285,8 @@ async fn test_constant_completion_prioritizes_project_core_explicit_then_transit
     backend.global_defines().write().insert(
         "APP_RUNTIME_FLAG".to_string(),
         DefineInfo {
+            case_insensitive: false,
+            constant_imports: None,
             file_uri: "file:///workspace/src/constants.php".to_string(),
             name_offset: 0,
             value: Some("'project'".to_string()),
@@ -2832,6 +2834,8 @@ async fn test_use_const_semicolon_termination() {
         dmap.insert(
             "MY_CONST".to_string(),
             phpantom_lsp::DefineInfo {
+                case_insensitive: false,
+                constant_imports: None,
                 file_uri: "file:///defs.php".to_string(),
                 name_offset: 0,
                 value: None,

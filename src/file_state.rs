@@ -8,7 +8,7 @@
 //! field added here is published and removed with the rest.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use crate::ParseErrorEntry;
 use crate::names::OwnedResolvedNames;
@@ -19,6 +19,8 @@ use crate::types::{NamespaceSpan, SymbolImports};
 /// Everything the last parse of one file left behind.
 #[derive(Clone, Default)]
 pub(crate) struct FileState {
+    /// Existence proofs shared by constant diagnostics and expression typing.
+    pub(crate) constant_guards: OnceLock<Arc<crate::diagnostics::existence_guards::ConstantGuards>>,
     /// The file's precomputed symbol spans.  `None` until a parse
     /// succeeds: a file the parser panics on keeps only its error, so the
     /// next request parses it again.

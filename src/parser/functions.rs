@@ -400,7 +400,7 @@ impl Backend {
     /// parse pass that `update_ast` already performs.
     pub(crate) fn extract_defines_from_statements<'a>(
         statements: impl Iterator<Item = &'a Statement<'a>>,
-        defines: &mut Vec<(String, u32, Option<String>)>,
+        defines: &mut Vec<(String, u32, Option<String>, bool)>,
         content: &str,
         namespace: Option<&str>,
         doc_ctx: Option<&DocblockCtx<'_>>,
@@ -438,7 +438,7 @@ impl Backend {
                             None => name.to_string(),
                         };
                         if constant_available(&fqn, doc_ctx) {
-                            defines.push((fqn, item.name.span.start.offset, value));
+                            defines.push((fqn, item.name.span.start.offset, value, false));
                         }
                     }
                 }
@@ -512,7 +512,7 @@ impl Backend {
     fn try_extract_define_info(
         expr: &Expression<'_>,
         content: &str,
-    ) -> Option<(String, u32, Option<String>)> {
+    ) -> Option<(String, u32, Option<String>, bool)> {
         if let Expression::Call(Call::Function(func_call)) = expr {
             let ident = match func_call.function {
                 Expression::Identifier(ident) => ident,
@@ -549,7 +549,23 @@ impl Backend {
                     let end = val_expr.span().end.offset as usize;
                     content.get(start..end).map(|s| s.to_string())
                 });
-                return Some((name.to_string(), offset, value_text));
+                let insensitive = args.get(2).is_some_and(|arg| {
+                    let value = match arg {
+                        Argument::Positional(arg) => arg.value,
+                        Argument::Named(arg) => arg.value,
+                    };
+                    match crate::parser::unwrap_parens(value) {
+                        Expression::Literal(Literal::True(_)) => true,
+                        Expression::Literal(Literal::Integer(integer)) => {
+                            integer.value.is_some_and(|value| value != 0)
+                        }
+                        Expression::Literal(Literal::String(string)) => string
+                            .value
+                            .is_some_and(|value| !value.is_empty() && value != b"0"),
+                        _ => false,
+                    }
+                });
+                return Some((name.to_string(), offset, value_text, insensitive));
             }
         }
         None

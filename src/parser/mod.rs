@@ -44,7 +44,7 @@ mod file_declarations;
 mod functions;
 mod initializers;
 pub(crate) use initializers::{
-    expand_class_file_constants, qualify_unqualified_constant_names, skip_heredoc,
+    expand_class_file_constants, rewrite_unqualified_constant_reads, skip_heredoc,
 };
 mod name_resolution;
 mod namespace_recovery;
@@ -401,6 +401,9 @@ impl Backend {
                 None,
             );
             defines
+                .into_iter()
+                .map(|(name, offset, value, _)| (name, offset, value))
+                .collect()
         })
     }
 

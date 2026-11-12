@@ -29,6 +29,7 @@ expects to be declared somewhere, but is not, is always `invalid_`.
 | `unsupported_syntax` | Error | Syntax that requires a newer PHP version than the project targets. |
 | `unknown_class` | Warning | A class, interface, trait, or enum that cannot be found, including one named by the type of a value whose member is used. |
 | `unknown_function` | Error | A function call that cannot be resolved. |
+| `unknown_constant` | Error / Warning / Information | A constant read that cannot be resolved. Legacy bare-name string fallbacks are informational before PHP 7.2 and warnings in PHP 7.2–7.4; reads that fail at runtime are errors. |
 | `unknown_member` | Warning | A method, property, or constant the resolved class does not have. `magic-properties` widens it to classes with `__get`. |
 | `partial_union_member` | Warning | A member only some classes of a union declare. Off unless `partial-union-members` is on. |
 | `unresolved_member_access` | Hint | `->`, `?->`, or `::` on a value whose type is `mixed` or could not be worked out. Off unless `unresolved-member-access` is on. |

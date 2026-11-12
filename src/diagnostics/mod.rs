@@ -327,6 +327,7 @@ pub(crate) mod unhandled_exceptions;
 mod uninitialized_properties;
 mod uninitialized_reads;
 pub(crate) mod unknown_classes;
+mod unknown_constants;
 pub(crate) mod unknown_functions;
 pub(crate) mod unknown_members;
 pub(crate) mod unreachable_code;

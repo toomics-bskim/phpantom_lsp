@@ -583,6 +583,7 @@ impl Backend {
             self.note_symfony_declarations(&update.uri, &update.symbol_map);
             self.note_wordpress_hooks(&update.uri, &update.symbol_map);
             let state = crate::file_state::FileState {
+                constant_guards: Default::default(),
                 symbol_map: Some(Arc::clone(&update.symbol_map)),
                 parse_errors: std::mem::take(&mut update.parse_errors),
                 use_map: std::mem::take(&mut update.use_map),
@@ -803,12 +804,29 @@ impl Backend {
                 }
 
                 let from_stub = !stubs.is_empty() && stubs.contains_uri(&update.uri);
+                for key in &update.old_define_names {
+                    if dmap
+                        .get_stored(key)
+                        .is_some_and(|info| info.file_uri == update.uri)
+                    {
+                        dmap.remove(key);
+                    }
+                }
                 for (name, define) in std::mem::take(&mut update.defines) {
+                    let insensitive = define.case_insensitive;
+                    let key = crate::constant_index::constant_key(&name, insensitive).into_owned();
+                    // The first declaration of a runtime key in a file wins.
+                    if dmap
+                        .get_stored(&key)
+                        .is_some_and(|held| held.file_uri == update.uri)
+                    {
+                        continue;
+                    }
                     // A constant a stub path declares keeps the stub's
                     // declaration: that is the one its lookup reads back.
                     if !from_stub
                         && !stubs.is_empty()
-                        && dmap.get(&name).is_some_and(|held| {
+                        && dmap.get_stored(&key).is_some_and(|held| {
                             held.file_uri != update.uri && stubs.contains_uri(&held.file_uri)
                         })
                     {
@@ -818,20 +836,8 @@ impl Backend {
                     // existing `define`/`const` propagate: changing the value
                     // updates hover, and inserting lines above it updates the
                     // go-to-definition offset.
-                    update.new_define_names.push(name.clone());
-                    dmap.insert(name, define);
-                }
-
-                // Evict names this file used to contribute but no longer
-                // does, guarding on the stored URI so a constant redefined
-                // in another file is not clobbered.
-                for old_name in &update.old_define_names {
-                    if update.new_define_names.contains(old_name) {
-                        continue;
-                    }
-                    if dmap.get(old_name).is_some_and(|d| d.file_uri == update.uri) {
-                        dmap.remove(old_name);
-                    }
+                    update.new_define_names.push(key);
+                    dmap.insert_with_case(name, define, insensitive);
                 }
             }
         }

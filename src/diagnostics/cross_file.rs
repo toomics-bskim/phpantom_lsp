@@ -226,7 +226,10 @@ fn affected_reference_keys(
         push_name_keys(&mut keys, name, ReferenceIndexKey::function_owned);
     }
     for name in baseline.constants.iter().chain(current.constants.iter()) {
-        push_name_keys(&mut keys, name, ReferenceIndexKey::Constant);
+        push_name_keys(&mut keys, name, ReferenceIndexKey::constant_owned);
+        push_name_keys(&mut keys, name, |name| {
+            ReferenceIndexKey::ConstantFolded(name.to_ascii_lowercase())
+        });
     }
 
     let mut seen_fqns = HashSet::new();

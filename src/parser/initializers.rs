@@ -227,7 +227,7 @@ pub(crate) fn qualify_class_names(
 /// name no import claims is kept: inside a namespace, PHP reads it as that
 /// namespace's constant when there is one and the global one otherwise, so
 /// whoever reads the expression looks it up that way (see
-/// [`qualify_unqualified_constant_names`]).
+/// [`rewrite_unqualified_constant_reads`]).
 pub(crate) fn qualify_constant_names(
     expression: &str,
     namespace: &Option<String>,
@@ -242,36 +242,30 @@ pub(crate) fn qualify_constant_names(
         return None;
     }
     rewrite_constant_names(expression, |name, qualified| {
-        if qualified {
-            Some(crate::names::resolve_to_fqn(name, use_map, namespace))
+        let fqn = if qualified {
+            crate::names::resolve_to_fqn(name, use_map, namespace)
         } else {
-            constant_imports.get(name).cloned()
-        }
+            constant_imports.get(name)?.clone()
+        };
+        Some(format!("\\{}", fqn.trim_start_matches('\\')))
     })
 }
 
-/// `expression` with each unqualified constant name `resolve` answers for
-/// replaced by the fully qualified name it returns, or `None` when it
-/// answers for none.
-///
-/// For text written inside a namespace and read elsewhere, after
-/// [`qualify_constant_names`] has spelled out the names that have one
-/// meaning: `resolve` picks between the namespace's constant and the global
-/// one, which only an index of the declared constants can say.
-pub(crate) fn qualify_unqualified_constant_names(
+/// Rewrite bare constant reads to declaration names or literal fallback values.
+pub(crate) fn rewrite_unqualified_constant_reads(
     expression: &str,
-    resolve: impl Fn(&str) -> Option<String>,
+    replace: impl Fn(&str) -> Option<String>,
 ) -> Option<String> {
     if !mentions_name(expression) {
         return None;
     }
     rewrite_constant_names(expression, |name, qualified| {
-        (!qualified).then(|| resolve(name)).flatten()
+        (!qualified).then(|| replace(name)).flatten()
     })
 }
 
 /// Whether `expression` reads a constant by an unqualified name, which
-/// [`qualify_unqualified_constant_names`] would have to look up.
+/// [`rewrite_unqualified_constant_reads`] would have to look up.
 pub(crate) fn names_unqualified_constant(expression: &str) -> bool {
     mentions_name(expression)
         && constant_names(expression)
@@ -330,7 +324,7 @@ fn names_outside_literals(expression: &str) -> impl Iterator<Item = &str> {
 }
 
 /// `expression` with each constant name it reads (not a class, function or
-/// member name) replaced by `\` and what `qualify` returns for it, or `None`
+/// member name) replaced by what `qualify` returns for it, or `None`
 /// when `qualify` returns nothing for any.
 ///
 /// `qualify` is handed the name as written and whether it is qualified
@@ -352,7 +346,7 @@ fn rewrite_constant_names(
         };
         output
             .get_or_insert_with(|| expression.to_owned())
-            .replace_range(start..end, &format!("\\{}", fqn.trim_start_matches('\\')));
+            .replace_range(start..end, &fqn);
     }
     output
 }
@@ -496,7 +490,7 @@ mod tests {
 
     use super::{
         expand_file_constants, names_unqualified_constant, qualify_class_names,
-        qualify_constant_names, qualify_unqualified_constant_names,
+        qualify_constant_names, rewrite_unqualified_constant_reads,
     };
 
     #[test]
@@ -681,13 +675,13 @@ mod tests {
 
     #[test]
     fn qualifies_unqualified_constants_the_resolver_answers_for() {
-        let resolve = |name: &str| (name == "LIMIT").then(|| "Lib\\LIMIT".to_string());
+        let resolve = |name: &str| (name == "LIMIT").then(|| "\\Lib\\LIMIT".to_string());
         assert_eq!(
-            qualify_unqualified_constant_names("LIMIT * 2 + OTHER", resolve).as_deref(),
+            rewrite_unqualified_constant_reads("LIMIT * 2 + OTHER", resolve).as_deref(),
             Some("\\Lib\\LIMIT * 2 + OTHER")
         );
         assert_eq!(
-            qualify_unqualified_constant_names("Sub\\LIMIT", resolve),
+            rewrite_unqualified_constant_reads("Sub\\LIMIT", resolve),
             None,
             "a qualified name has one meaning already"
         );

@@ -96,7 +96,7 @@ hint; it is not evidence of support for the later primitive type.
 
 ## Delivery order
 
-Each numbered item is one implementation task and one PR. LP13, LP15–LP17
+Each numbered item is one implementation task and one PR. LP15–LP17
 address the remaining semantic and inference gaps. LP18 qualifies the final
 support claim.
 Dependencies below are explicit;
@@ -105,26 +105,6 @@ items can move into scheduled sprints without changing their scope.
 Reproduced defects should receive GitHub issues with the audit sample
 and target version attached. This
 document records the work; it does not imply issues have been opened.
-
-## LP13. Legacy constant lookup preserves name rules
-
-**Impact: Medium · Complexity: Medium-High**
-
-**Evidence.** A lowercase lookup of `define('AUDIT_CASE_CONST', 'value',
-true)` returns `'value'` on both runtimes but has no inferred hover type.
-An undefined bare constant falls back to its name at runtime and also
-has no inferred type in the probe.
-
-**Plan.** Preserve case-insensitivity metadata for legacy `define` calls
-without making all constants case-insensitive. Model namespace fallback
-and undefined bare-name behavior separately from class constants.
-
-**Done when.** Completion, navigation, rename, and value inference agree
-for both constant kinds. Diagnose questionable undefined names while
-preserving their runtime type and version-appropriate severity; include
-modern error behavior and collisions between differently cased names.
-Include built-in names unavailable at the selected target, such as
-`PHP_INT_MIN` before PHP 7, in the undefined-name diagnostic checks.
 
 ## LP15. Returned closures retain their bound receiver type
 
@@ -231,7 +211,7 @@ stale types for unknown mutations.
 
 ## LP18. Qualify and document the support contract
 
-**Impact: High · Complexity: Medium · Depends on: LP13, LP15–LP17, LP21–LP22**
+**Impact: High · Complexity: Medium · Depends on: LP15–LP17, LP21–LP22**
 
 **Plan.** Expand the regression matrix to remaining language and LSP
 surfaces before claiming full support: include/require and manual

@@ -111,15 +111,27 @@ impl Backend {
         // ── 1. User-defined constants (from parsed files) ───────────
         {
             let dmap = self.symbols.global_defines.read();
-            for (name, info) in dmap.iter() {
+            for (spelling, info) in dmap.iter() {
+                // An exact declaration can shadow the original spelling of a
+                // folded declaration. Offer the latter by its accessible key.
+                let folded;
+                let name = if dmap
+                    .get(spelling)
+                    .is_some_and(|selected| !std::ptr::eq(selected, info))
+                {
+                    folded = crate::constant_index::constant_key(spelling, info.case_insensitive);
+                    folded.as_ref()
+                } else {
+                    spelling
+                };
                 if !contains_folded(name, &prefix_lower) {
                     continue;
                 }
-                if !seen.insert(name.clone()) {
+                if !seen.insert(name.to_string()) {
                     continue;
                 }
                 items.push(build_constant_item(
-                    name.clone(),
+                    name.to_string(),
                     info.value.clone(),
                     flat_symbol_sort_text(
                         name,
@@ -148,13 +160,13 @@ impl Backend {
                 if !contains_folded(name, &prefix_lower) {
                     continue;
                 }
-                if !seen.insert(name.clone()) {
+                if !seen.insert(name.to_string()) {
                     continue;
                 }
                 // If the constant has already been lazily parsed, use
                 // its value.  Otherwise leave it as None — the resolve
                 // handler will fill it in when the user selects the item.
-                let value = dmap.get(name.as_str()).and_then(|info| info.value.clone());
+                let value = dmap.get(name).and_then(|info| info.value.clone());
                 let origin = self
                     .symbols
                     .autoload_constant_origin_index
@@ -163,7 +175,7 @@ impl Backend {
                     .copied()
                     .unwrap_or(crate::ClassCompletionOrigin::Project);
                 items.push(build_constant_item(
-                    name.clone(),
+                    name.to_string(),
                     value,
                     flat_symbol_sort_text(name, &prefix_lower, origin_sort_tier(origin), '1'),
                     false,

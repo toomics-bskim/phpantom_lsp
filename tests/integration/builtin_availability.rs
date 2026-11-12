@@ -61,7 +61,7 @@ async fn builtin_availability_fresh_targets_agree_across_lsp_features() {
             let hover = common::hover_response(&backend, &uri, pos.line, pos.character + 2).await;
             assert_eq!(
                 hover.is_some(),
-                available,
+                available || (name == "PHP_INT_MIN" && target < 700),
                 "{target}: hover {name}: {hover:?}"
             );
             let definition =
@@ -71,14 +71,21 @@ async fn builtin_availability_fresh_targets_agree_across_lsp_features() {
                 definition.is_none(),
                 "{target}: definition {name}: {definition:?}"
             );
-            // Bare undefined constants have no diagnostic yet; PHP 5 also permits their name fallback.
-            if name != "PHP_INT_MIN" {
-                let unknown = reports.iter().any(|report| report.range.start.line == line
-                    && matches!(&report.code, Some(Code::String(code)) if code.starts_with("unknown_")));
+            let unknown = reports.iter().find(|report| report.range.start.line == line
+                && matches!(&report.code, Some(Code::String(code)) if code.starts_with("unknown_")));
+            assert_eq!(
+                unknown.is_some(),
+                !available,
+                "{target}: diagnostics {name}: {reports:?}"
+            );
+            if name == "PHP_INT_MIN" && !available {
                 assert_eq!(
-                    unknown, !available,
-                    "{target}: diagnostics {name}: {reports:?}"
+                    unknown.unwrap().severity,
+                    Some(DiagnosticSeverity::Information)
                 );
+                let text =
+                    common::markup_hover_at(&backend, &uri, pos.line, pos.character + 2).await;
+                assert!(text.contains("'PHP_INT_MIN'"), "{text}");
             }
             let labels = common::response_labels(
                 common::completion_response(&backend, &uri, pos.line, pos.character + 3, None)
@@ -216,7 +223,8 @@ async fn builtin_availability_external_checkout_matches_embedded_provenance() {
     assert!(backend.find_or_load_function(&["old_builtin"]).is_some());
     assert!(backend.find_or_load_function(&["new_builtin"]).is_none());
     assert!(backend.find_or_load_function(&["redis_helper"]).is_some());
-    assert!(common::hover_response(&backend, &uri, 4, 7).await.is_none());
+    let hover = common::markup_hover_at(&backend, &uri, 4, 7).await;
+    assert!(hover.contains("'PHP_INT_MIN'"), "{hover}");
     for (line, available) in [(1, true), (2, false), (3, true), (4, false)] {
         assert_eq!(
             common::goto_definition_at(&backend, &uri, line, 7)

@@ -14,6 +14,7 @@ use parking_lot::RwLock;
 
 use crate::ci_map::{CiMap, CiSet};
 use crate::classmap_scanner::WorkspaceScanResult;
+use crate::constant_index::ConstantIndex;
 use crate::php_type::PhpType;
 use crate::types::{ClassInfo, DefineInfo, FunctionInfo};
 use crate::{ClassCompletionOrigin, UriGlobals};
@@ -39,7 +40,7 @@ pub(crate) struct SymbolIndex {
     /// name, the next declaration takes over instead of the name vanishing.
     pub(crate) duplicate_functions: Arc<RwLock<DuplicateDeclarations<FunctionInfo>>>,
     /// Global constants from `define()` / top-level `const` statements.
-    pub(crate) global_defines: Arc<RwLock<HashMap<String, DefineInfo>>>,
+    pub(crate) global_defines: Arc<RwLock<ConstantIndex<DefineInfo>>>,
     /// Per-URI record of the global function/constant symbols each file
     /// contributed at its last parse, for targeted eviction.
     pub(crate) uri_globals_index: Arc<RwLock<HashMap<String, UriGlobals>>>,
@@ -49,7 +50,7 @@ pub(crate) struct SymbolIndex {
     /// no entry is project code.
     pub(crate) autoload_function_origin_index: Arc<RwLock<CiMap<ClassCompletionOrigin>>>,
     /// Autoload constant index: constant name → file path on disk.
-    pub(crate) autoload_constant_index: Arc<RwLock<HashMap<String, PathBuf>>>,
+    pub(crate) autoload_constant_index: Arc<RwLock<ConstantIndex<PathBuf>>>,
     /// Completion provenance for autoloaded constant symbols.  A name with
     /// no entry is project code.
     pub(crate) autoload_constant_origin_index: Arc<RwLock<HashMap<String, ClassCompletionOrigin>>>,
@@ -136,11 +137,11 @@ impl SymbolIndex {
             uri_classes_index: Arc::new(RwLock::new(HashMap::new())),
             global_functions: Arc::new(RwLock::new(CiMap::new())),
             duplicate_functions: Arc::new(RwLock::new(CiMap::new())),
-            global_defines: Arc::new(RwLock::new(HashMap::new())),
+            global_defines: Arc::new(RwLock::new(ConstantIndex::new())),
             uri_globals_index: Arc::new(RwLock::new(HashMap::new())),
             autoload_function_index: Arc::new(RwLock::new(CiMap::new())),
             autoload_function_origin_index: Arc::new(RwLock::new(CiMap::new())),
-            autoload_constant_index: Arc::new(RwLock::new(HashMap::new())),
+            autoload_constant_index: Arc::new(RwLock::new(ConstantIndex::new())),
             autoload_constant_origin_index: Arc::new(RwLock::new(HashMap::new())),
             autoload_file_paths: Arc::new(RwLock::new(Vec::new())),
             fqn_uri_index: Arc::new(RwLock::new(CiMap::new())),
@@ -764,6 +765,30 @@ impl<V> NameMap<V> for CiMap<V> {
 
     fn remove(&mut self, name: &str) {
         CiMap::remove(self, name);
+    }
+}
+
+impl<V> NameMap<V> for ConstantIndex<V> {
+    fn get(&self, name: &str) -> Option<&V> {
+        ConstantIndex::get(self, name)
+    }
+    fn insert(&mut self, name: String, value: V) -> Option<V> {
+        ConstantIndex::insert(self, name, value)
+    }
+    fn remove(&mut self, name: &str) {
+        ConstantIndex::remove(self, name);
+    }
+    fn try_insert_with(
+        &mut self,
+        name: String,
+        make: impl FnOnce() -> V,
+    ) -> Result<(), (String, &V)> {
+        if self.contains_key(&name) {
+            let value = self.get(&name).unwrap();
+            return Err((name, value));
+        }
+        self.insert(name, make());
+        Ok(())
     }
 }
 

@@ -566,9 +566,11 @@ impl Backend {
         // qualified against the block that wrote it, as a class constant's
         // are.
         let multi_block = decls.namespace_spans.len() > 1;
+        let legacy_constants = self.php_version().major < 8;
+        let mut constant_import_scopes = HashMap::new();
         let defines: Vec<(String, DefineInfo)> = define_entries
             .into_iter()
-            .map(|(name, offset, value)| {
+            .map(|(name, offset, value, case_insensitive)| {
                 let block = NamespaceSpan::containing(&decls.namespace_spans, offset)
                     .filter(|_| multi_block);
                 let (use_map, constant_imports, namespace) = match block {
@@ -583,13 +585,31 @@ impl Backend {
                         &decls.namespace,
                     ),
                 };
+                let retained_imports = (legacy_constants
+                    && !constant_imports.is_empty()
+                    && value
+                        .as_deref()
+                        .is_some_and(super::initializers::names_unqualified_constant))
+                .then(|| {
+                    Arc::clone(
+                        constant_import_scopes
+                            .entry(block.map_or(0, |block| block.start))
+                            .or_insert_with(|| Arc::new(constant_imports.clone())),
+                    )
+                });
+                let empty_imports = HashMap::new();
+                let initializer_imports = if retained_imports.is_some() {
+                    &empty_imports
+                } else {
+                    constant_imports
+                };
                 let value = value.map(|value| {
                     let value =
                         super::initializers::expand_file_constants(&value, uri).unwrap_or(value);
                     super::name_resolution::qualify_initializer(
                         &value,
                         use_map,
-                        constant_imports,
+                        initializer_imports,
                         namespace,
                     )
                     .unwrap_or(value)
@@ -597,6 +617,8 @@ impl Backend {
                 (
                     name,
                     DefineInfo {
+                        case_insensitive: case_insensitive && legacy_constants,
+                        constant_imports: retained_imports,
                         file_uri: uri.to_string(),
                         name_offset: offset,
                         namespace: namespace

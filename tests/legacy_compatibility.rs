@@ -12,6 +12,9 @@ mod generated_edits;
 #[path = "compatibility/constructor_access.rs"]
 mod constructor_access;
 
+#[path = "compatibility/constant_names.rs"]
+mod constant_names;
+
 use std::path::Path;
 use std::time::Duration;
 

@@ -799,3 +799,28 @@ abstract class Base
         );
     }
 }
+
+#[test]
+fn changing_constant_case_rules_changes_the_declaration_snapshot() {
+    let backend = Backend::new_test();
+    backend.set_php_version(crate::types::PhpVersion::new(5, 6));
+    let uri = crate::util::path_to_uri(&std::env::temp_dir().join("constant-case-snapshot.php"));
+    backend.update_ast(&uri, "<?php define('lower', 42, true);");
+    let before = DeclarationSnapshot::capture(&backend, &uri);
+    backend.update_ast(&uri, "<?php define('lower', 42, false);");
+    let after = DeclarationSnapshot::capture(&backend, &uri);
+    assert!(!before.matches(&after));
+}
+
+#[test]
+fn changing_constant_initializer_imports_changes_the_declaration_snapshot() {
+    let backend = Backend::new_test();
+    backend.set_php_version(crate::types::PhpVersion::new(5, 6));
+    let uri = crate::util::path_to_uri(&std::env::temp_dir().join("constant-import-snapshot.php"));
+    let source = "<?php use const Missing\\ONE as Imported; define('COPIED', Imported);";
+    backend.update_ast(&uri, source);
+    let before = DeclarationSnapshot::capture(&backend, &uri);
+    backend.update_ast(&uri, &source.replace("Missing\\ONE", "Missing\\TWO"));
+    let after = DeclarationSnapshot::capture(&backend, &uri);
+    assert!(!before.matches(&after));
+}

@@ -47,7 +47,17 @@ pub(super) fn resolve_rhs_constant_access(
 /// that namespace's `TWO`. The text-only resolver the fold falls back to has
 /// no namespace to try.
 fn global_constant_type(name: &str, offset: u32, ctx: &VarResolutionCtx<'_>) -> Option<PhpType> {
-    let value = ctx.lookup_constant(name, offset)??;
+    let value = match ctx.lookup_constant(name, offset) {
+        Some(value) => value?,
+        None => {
+            return ctx.file.backend?.undefined_constant_type(
+                name,
+                ctx.file.uri,
+                ctx.file.content,
+                offset,
+            );
+        }
+    };
     let rctx = ctx.as_resolution_ctx();
     infer_type_from_constant_value(&value).or_else(|| {
         let resolve = |text: &str| {

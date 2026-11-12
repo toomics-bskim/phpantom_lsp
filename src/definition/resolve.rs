@@ -488,12 +488,7 @@ impl Backend {
             }
 
             SymbolKind::ConstantReference { name, .. } => {
-                let ctx = self.file_context(uri);
-                let fqn = ctx.resolve_name_at(name, cursor_offset);
-                let mut candidates = vec![fqn];
-                if !candidates.iter().any(|c| c == name) {
-                    candidates.push(name.to_string());
-                }
+                let candidates = vec![self.constant_fqn_at(uri, symbol.start, name)];
                 // Try class constant (Name::CONST) first — but the symbol
                 // map records class constants as MemberAccess, so this path
                 // handles standalone `define()` constants and bare constant

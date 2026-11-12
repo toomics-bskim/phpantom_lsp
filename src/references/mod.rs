@@ -441,7 +441,12 @@ pub(super) fn function_candidate_keys(target: &str, target_short: &str) -> Vec<R
 pub(super) fn constant_candidate_keys(target: &str, target_short: &str) -> Vec<ReferenceIndexKey> {
     symbol_candidate_names(target, target_short)
         .into_iter()
-        .map(ReferenceIndexKey::Constant)
+        .flat_map(|name| {
+            [
+                ReferenceIndexKey::ConstantFolded(name.to_ascii_lowercase()),
+                ReferenceIndexKey::constant_owned(name),
+            ]
+        })
         .collect()
 }
 

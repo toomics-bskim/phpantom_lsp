@@ -22,14 +22,23 @@ impl Backend {
         // The name is resolved against the file the same way the
         // type engine resolves it, so a namespaced constant is
         // found through whichever spelling the reference used.
-        let lookup = self.resolve_constant_name_at(
-            name,
-            ctx.resolved_names.as_deref(),
-            symbol_start,
-            &ctx.use_map,
-            &ctx.symbol_imports.constants,
-            &ctx.namespace,
-        );
+        let is_read = ctx
+            .resolved_names
+            .as_ref()
+            .and_then(|names| names.get(symbol_start))
+            .is_some();
+        let lookup = if is_read {
+            self.resolve_constant_name_at(
+                name,
+                ctx.resolved_names.as_deref(),
+                symbol_start,
+                &ctx.use_map,
+                &ctx.symbol_imports.constants,
+                &ctx.namespace,
+            )
+        } else {
+            self.lookup_global_constant(name)
+        };
 
         // `lookup` is `Some(Some(val))` when the constant
         // exists with a known value, `Some(None)` when it
@@ -41,7 +50,8 @@ impl Backend {
                 name, val
             ))),
             Some(None) => Some(make_hover(format!("```php\n<?php\nconst {};\n```", name))),
-            None => None,
+            None => is_read.then(|| self.undefined_constant_type(name, Some(site.uri), site.content, symbol_start)).flatten()
+                .map(|ty| make_hover(format!("```php\n{ty}\n```\n\nUndefined constant; this PHP target uses its name as a string."))),
         }
     }
 }

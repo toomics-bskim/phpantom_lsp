@@ -125,6 +125,23 @@ constructor visibility and PHP 8 controls. Fatal-runtime fixtures check both
 the exit status and the error text; successful lint alone does not establish
 that construction is legal.
 
+## Constant names
+
+[`constant_names.rs`](constant_names.rs) checks legacy `define` name rules,
+namespace lookup, imports, and undefined-name types through LSP requests.
+The cases keep exact declarations separate from case-insensitive declarations,
+including collisions, lazy file discovery, and edits to the case flag.
+Class constants and interpolation keys retain their own rules.
+
+`constant-names-*.json` exports deterministic values and fatal-runtime controls
+for PHP 5.5.38, 5.6.40, and 8.5.10. A missing bare name becomes a string before
+PHP 8, while an explicitly qualified name fails. PHP 5.6 also uses the original
+basename for a missing `use const` import, rather than its alias. Diagnostics
+distinguish notices before PHP 7.2, warnings in PHP 7.2–7.4, and modern errors.
+These expectations follow the [constant syntax reference](https://www.php.net/manual/en/language.constants.syntax.php)
+and [`define` reference](https://www.php.net/manual/en/function.define.php),
+with the pinned runtimes checking name collisions and import behavior.
+
 ## Built-in availability
 
 `cargo test --test integration builtin_availability` checks introduction and

@@ -92,7 +92,7 @@ fn filter_current_file_constants(
         let dmap = backend.global_defines().read();
         dmap.iter()
             .filter(|(_, info)| info.file_uri.as_str() == current_uri)
-            .map(|(name, _)| name.clone())
+            .map(|(name, _)| name.to_string())
             .collect()
     };
     if current_consts.is_empty() {
