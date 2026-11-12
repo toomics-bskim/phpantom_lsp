@@ -36,6 +36,7 @@ struct PreparedAstIndexUpdate {
     /// Empty on a first parse, where nothing can be cached yet.
     old_anon_fqns: Vec<String>,
     classes: Vec<Arc<ClassInfo>>,
+    reference_entries: Option<crate::reference_index::ReferenceEntries>,
     use_map: HashMap<String, String>,
     symbol_imports: crate::types::SymbolImports,
     resolved_names: Arc<OwnedResolvedNames>,
@@ -325,7 +326,7 @@ impl Backend {
                 .filter(|class| !class.name.starts_with("__anonymous@"))
                 .map(|class| class_info_fqn(class))
                 .collect();
-            let classes: Vec<Arc<ClassInfo>> = crate::types::into_arcs(update.classes);
+            let classes: Vec<Arc<ClassInfo>> = update.classes;
             let new_fqns: Vec<String> = classes
                 .iter()
                 .filter(|class| !class.name.starts_with("__anonymous@"))
@@ -349,6 +350,7 @@ impl Backend {
                 new_fqns,
                 old_anon_fqns,
                 classes,
+                reference_entries: update.reference_entries,
                 use_map: update.use_map,
                 symbol_imports: update.symbol_imports,
                 resolved_names: update.resolved_names,
@@ -492,10 +494,20 @@ impl Backend {
         // go out with the rest of each file's state.
         let refreshed_existing =
             self.refresh_batch_laravel_candidates(&mut prepared, &all_old_fqns, &all_new_fqns);
-        let reference_items: Vec<(String, Arc<SymbolMap>)> = prepared
-            .iter()
-            .map(|update| (update.uri.clone(), Arc::clone(&update.symbol_map)))
-            .chain(refreshed_existing.iter().cloned())
+        let reference_items: Vec<_> = prepared
+            .iter_mut()
+            .map(|update| {
+                (
+                    update.uri.clone(),
+                    Arc::clone(&update.symbol_map),
+                    update.reference_entries.take(),
+                )
+            })
+            .chain(
+                refreshed_existing
+                    .iter()
+                    .map(|(uri, map)| (uri.clone(), Arc::clone(map), None)),
+            )
             .collect();
         self.publish_file_states(&mut prepared);
         self.publish_symbol_maps(refreshed_existing.iter().cloned());
@@ -524,7 +536,18 @@ impl Backend {
         }
         let changed = structural_changed || connections_changed || !refreshed_existing.is_empty();
 
-        self.reindex_references_for_symbol_maps_batch(reference_items);
+        if !self.skip_reference_index {
+            self.reindex_reference_entries_batch(
+                reference_items
+                    .into_iter()
+                    .map(|(uri, map, entries)| {
+                        let entries = entries
+                            .unwrap_or_else(|| self.reference_entries_for_symbol_map(&uri, &map));
+                        (uri, entries)
+                    })
+                    .collect(),
+            );
+        }
 
         // Runtime writes follow every published map, including unedited
         // files whose facade alias was shadowed or restored by this batch.
@@ -997,14 +1020,15 @@ impl Backend {
         {
             let mut dependency_presence = HashMap::new();
             for update in prepared.iter_mut() {
-                Arc::make_mut(&mut update.symbol_map).refresh_conditional_string_key_spans(
-                    None,
-                    |dependency| {
+                let changed = Arc::make_mut(&mut update.symbol_map)
+                    .refresh_conditional_string_key_spans(None, |dependency| {
                         *dependency_presence
                             .entry(dependency)
                             .or_insert_with(|| self.string_key_dependency_exists(dependency))
-                    },
-                );
+                    });
+                if changed {
+                    update.reference_entries = None;
+                }
             }
         }
 

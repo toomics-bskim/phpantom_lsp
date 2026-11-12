@@ -418,32 +418,10 @@ pub(crate) fn sort_locations_for_references(locations: &mut Vec<Location>) {
 
 /// Check whether a resolved class name matches the target FQN.
 ///
-/// Two names match if their fully-qualified forms are equal, or if both
-/// are unqualified and their short names match.  PHP resolves class names
-/// case-insensitively, so `WIDGET` and `Widget` are the same class and all
-/// the comparisons here fold case.
-pub(super) fn class_names_match(resolved: &str, target: &str, target_short: &str) -> bool {
-    if resolved.eq_ignore_ascii_case(target) {
-        return true;
-    }
-    if !resolved.contains('\\') && !target.contains('\\') {
-        return resolved.eq_ignore_ascii_case(target_short);
-    }
-    // When the resolved name is unqualified but the target is
-    // namespace-qualified, the resolved name might be a short-name
-    // reference to the target class (e.g. `Request` referencing
-    // `Illuminate\Http\Request` via a `use` import that was not
-    // tracked in the resolved-names map).  Accept the match only
-    // when the short names agree.
-    //
-    // The reverse (resolved is qualified, target is unqualified) is
-    // NOT accepted: `App\Helper` is a different class from a global
-    // `Helper`, so matching by short name alone would produce false
-    // positives.
-    if !resolved.contains('\\') && target.contains('\\') {
-        return resolved.eq_ignore_ascii_case(target_short);
-    }
-    false
+/// Both names are already resolved. PHP class names are case-insensitive,
+/// but a global name and a namespaced name remain distinct.
+pub(super) fn class_names_match(resolved: &str, target: &str) -> bool {
+    resolved.eq_ignore_ascii_case(target)
 }
 
 pub(super) fn class_candidate_keys(target: &str, target_short: &str) -> Vec<ReferenceIndexKey> {

@@ -67,7 +67,8 @@ pub(crate) enum AstIndexParseResult {
 pub(crate) struct AstIndexUpdate {
     pub(super) uri: String,
     pub(super) parse_errors: Vec<ParseErrorEntry>,
-    pub(super) classes: Vec<ClassInfo>,
+    pub(super) classes: Vec<Arc<ClassInfo>>,
+    pub(super) reference_entries: Option<crate::reference_index::ReferenceEntries>,
     pub(super) use_map: HashMap<String, String>,
     pub(super) symbol_imports: crate::types::SymbolImports,
     pub(super) resolved_names: Arc<OwnedResolvedNames>,
@@ -347,6 +348,17 @@ impl Backend {
         }) {
             Some(mut update) => {
                 update.template = template;
+                if !self.skip_reference_index {
+                    update.reference_entries = Some(
+                        crate::reference_index::ReferenceFile {
+                            classes: &update.classes,
+                            use_map: &update.use_map,
+                            namespaces: &update.namespace_spans,
+                            resolved_names: Some(&update.resolved_names),
+                        }
+                        .build(self, uri, &update.symbol_map),
+                    );
+                }
                 AstIndexParseResult::Update(Box::new(update))
             }
             None => AstIndexParseResult::ParseFailed {
@@ -435,9 +447,9 @@ impl Backend {
         // its pivot accessors on the next class load.
         if !self.laravel.pivots.is_dirty()
             && updates.iter().any(|u| {
-                u.classes
-                    .iter()
-                    .any(crate::virtual_members::laravel::class_declares_pivot_relationship)
+                u.classes.iter().any(|class| {
+                    crate::virtual_members::laravel::class_declares_pivot_relationship(class)
+                })
             })
         {
             self.laravel.pivots.mark_dirty();
@@ -724,7 +736,8 @@ impl Backend {
         AstIndexUpdate {
             uri: uri.to_string(),
             parse_errors,
-            classes,
+            classes: crate::types::into_arcs(classes),
+            reference_entries: None,
             use_map: decls.use_map,
             symbol_imports: decls.symbol_imports,
             resolved_names: Arc::new(owned_resolved),

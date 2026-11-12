@@ -214,6 +214,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Performance and memory
 
+- **Faster workspace indexing.** Large projects become ready for references and navigation sooner, while keeping temporary parsing memory bounded.
 - **Drupal sites take a quarter of the memory.** Drupal core, contributed extensions, and any other package Composer installs outside `vendor/` no longer keep their whole parse in memory once indexed, and are read again when a search or the editor needs them. A Drupal 11 site settles under 300 MiB instead of over 1.1 GiB. Like `vendor/`, those packages are left out of background workspace diagnostics.
 - **Faster analysis of Laravel projects.** Classes the project's Laravel setup adds to, such as the auth guard, the `Storage` facade, and classes with macros or pivot accessors, are no longer rebuilt every time they are looked up. Analysing a large Laravel application takes about an eighth less CPU time.
 - **Faster diagnostics and completion after each edit.** Diagnostics, completion, hover and every other request on an edited file reuse the parse the edit already made, instead of parsing the file again. Completing at the end of a file whose last statement is still unfinished takes about half as long.
@@ -677,6 +678,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Rename, references, and move
 
+- **Class references respect namespaces.** Finding references to a namespaced class no longer includes a global class that shares its short name.
 - **Named arguments in attributes.** In `#[Foo(bar: 'hello')]`, the `bar:` label is now a reference to the property a promoted `$bar` constructor parameter declares, so find references, rename, go-to-definition and hover reach it from both sides.
 - **`move` on Windows.** The `move` command no longer refuses every file as being outside the project on Windows, and a namespace such as `Tests\Unit` is no longer mistaken for the directory of the same name.
 - **Static members reached through a differently cased class name are references.** Find References and rename on a static property, method, or constant now include `WIDGET::$count` and `{@see widget::$count}` when the class is declared `Widget`, as PHP's case-insensitive class names allow.

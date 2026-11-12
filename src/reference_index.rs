@@ -6,13 +6,16 @@
 //! those scanners can skip files that cannot contain a match once the workspace
 //! has been fully parsed.
 
-use std::cell::OnceCell;
+use foldhash::{HashMap as FastMap, HashSet as FastSet};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use parking_lot::RwLock;
 use tower_lsp_server::gen_lsp_types::Range;
+
+mod entries;
+pub(crate) use entries::{ReferenceEntries, ReferenceFile};
 
 use crate::Backend;
 use crate::atom::{Atom, AtomMap, AtomSet, atom};
@@ -157,8 +160,8 @@ impl ReferenceIndexKey {
 /// every keystroke.
 #[derive(Default)]
 pub(crate) struct ReferenceIndexInner {
-    by_key: HashMap<ReferenceIndexKey, HashMap<Arc<str>, u32>>,
-    uri_keys: HashMap<Arc<str>, Vec<ReferenceIndexKey>>,
+    by_key: FastMap<ReferenceIndexKey, FastMap<Arc<str>, u32>>,
+    uri_keys: FastMap<Arc<str>, Vec<ReferenceIndexKey>>,
     resolved_members: HashMap<Arc<str>, Arc<ResolvedMemberFile>>,
 }
 
@@ -337,7 +340,7 @@ impl ResolvedMemberFile {
 }
 
 impl ReferenceIndexInner {
-    pub(crate) fn get(&self, key: &ReferenceIndexKey) -> Option<&HashMap<Arc<str>, u32>> {
+    pub(crate) fn get(&self, key: &ReferenceIndexKey) -> Option<&FastMap<Arc<str>, u32>> {
         self.by_key.get(key)
     }
 
@@ -359,8 +362,8 @@ impl ReferenceIndexInner {
     pub(crate) fn audit_maps(
         &self,
     ) -> (
-        &HashMap<ReferenceIndexKey, HashMap<Arc<str>, u32>>,
-        &HashMap<Arc<str>, Vec<ReferenceIndexKey>>,
+        &FastMap<ReferenceIndexKey, FastMap<Arc<str>, u32>>,
+        &FastMap<Arc<str>, Vec<ReferenceIndexKey>>,
         &HashMap<Arc<str>, Arc<ResolvedMemberFile>>,
     ) {
         (&self.by_key, &self.uri_keys, &self.resolved_members)
@@ -630,26 +633,29 @@ impl Backend {
             return;
         }
 
-        // Nothing is cached until a declaration hint has been asked for,
-        // and until then the invalidation bookkeeping below is pure cost:
-        // the whole workspace index publishes through here.
-        let track_members = !self.member_ref_counts.is_empty();
+        let rebuilt = items
+            .into_iter()
+            .map(|(uri, map)| {
+                let entries = self.reference_entries_for_symbol_map(&uri, &map);
+                (uri, entries)
+            })
+            .collect();
+        self.reindex_reference_entries_batch(rebuilt);
+    }
 
-        let mut rebuilt = Vec::with_capacity(items.len());
-        for (uri, symbol_map) in items {
-            if self.is_reference_indexable_uri(&uri) {
-                // A class that gains a parent, an interface, or a trait
-                // moves which accesses belong to which declaration, and
-                // that is not visible in the per-file key deltas below.
-                if track_members && self.class_shape_changed(&uri) {
-                    self.member_ref_counts.invalidate_all();
-                }
-                rebuilt.push((
-                    uri.clone(),
-                    self.reference_entries_for_symbol_map(&uri, &symbol_map),
-                ));
-            } else {
-                rebuilt.push((uri, Vec::new()));
+    pub(crate) fn reindex_reference_entries_batch(
+        &self,
+        mut rebuilt: Vec<(String, ReferenceEntries)>,
+    ) {
+        if rebuilt.is_empty() || self.skip_reference_index {
+            return;
+        }
+        let track_members = !self.member_ref_counts.is_empty();
+        for (uri, entries) in &mut rebuilt {
+            if !self.is_reference_indexable_uri(uri) {
+                entries.clear();
+            } else if track_members && self.class_shape_changed(uri) {
+                self.member_ref_counts.invalidate_all();
             }
         }
 
@@ -712,7 +718,7 @@ impl Backend {
                 continue;
             }
             let uri: Arc<str> = Arc::from(uri.as_str());
-            let mut keys: HashSet<ReferenceIndexKey> = HashSet::new();
+            let mut keys: FastSet<ReferenceIndexKey> = FastSet::default();
             for (key, counts_as_reference) in entries {
                 let count = index
                     .by_key
@@ -734,215 +740,23 @@ impl Backend {
         }
     }
 
-    /// Build the `(key, counts_as_reference)` pairs a file contributes to
-    /// the index. The caller interns the URI once per file and shares it
-    /// across every key, rather than allocating a fresh `String` per span.
-    ///
-    /// A span joins the index under every name it could be searched by,
-    /// but only one of those names is the symbol it actually names: a
-    /// reference to `App\Widget` is a candidate under `Widget` too, and
-    /// counting it there would credit a global `\Widget` with it.  So the
-    /// count rides on the resolved name alone, and a declaration counts
-    /// under no name at all.
-    fn reference_entries_for_symbol_map(
+    pub(crate) fn reference_entries_for_symbol_map(
         &self,
         uri: &str,
         symbol_map: &SymbolMap,
-    ) -> Vec<(ReferenceIndexKey, bool)> {
+    ) -> ReferenceEntries {
         if !self.is_reference_indexable_uri(uri) {
             return Vec::new();
         }
-
-        let mut entries: Vec<(ReferenceIndexKey, bool)> = Vec::new();
-        // Resolving a namespace-qualified name back to the namespace it
-        // was written in needs the file's namespace blocks; cloning them
-        // once beats re-locking the file states per span.
-        let namespaces = OnceCell::new();
-        for span in &symbol_map.spans {
-            let is_declaration = matches!(
-                &span.kind,
-                SymbolKind::ClassDeclaration { .. }
-                    | SymbolKind::FunctionCall {
-                        is_definition: true,
-                        ..
-                    }
-                    | SymbolKind::ConstantReference {
-                        is_definition: true,
-                        ..
-                    }
-                    | SymbolKind::MemberDeclaration { .. }
-            );
-
-            for (key, counts_as_reference) in self.reference_keys_for_span(uri, span, &namespaces) {
-                entries.push((key, counts_as_reference && !is_declaration));
-            }
+        let state = self.files.read().get(uri).cloned().unwrap_or_default();
+        let classes = self.shared_classes_for_uri(uri).unwrap_or_default();
+        ReferenceFile {
+            classes: &classes,
+            use_map: &state.use_map,
+            namespaces: &state.namespaces,
+            resolved_names: state.resolved_names.as_deref(),
         }
-
-        // A key behind a typed receiver is only settled lazily, and whoever
-        // wants the answer has to find the file before it can be asked for.
-        // The candidate joins the index unconfirmed, under every kind it
-        // could turn out to be: this index narrows a workspace scan to the
-        // files that *might* hold a key, and every consumer of it re-checks
-        // what it found. Outside the framework a candidate belongs to it can
-        // never be confirmed, and morph sites are recorded for every plain
-        // `$x->prop === 'literal'`, so skip them there.
-        let is_laravel = self.resolved_class_cache.read().laravel().is_enabled();
-        let frameworks = ReceiverFrameworks {
-            laravel: is_laravel,
-            symfony: self.is_symfony_project(),
-            service_container: self.reads_service_container(),
-            twig: self.is_twig_project(),
-            yii: self.is_yii_project(),
-            drupal: self.is_drupal_project(),
-        };
-        let enabled = |kind| frameworks.enables(kind);
-        for site in &symbol_map.typed_receiver_sites {
-            if !site.receiver.names_any(enabled) {
-                continue;
-            }
-            let mut kinds: Vec<StringKeyKind> = Vec::with_capacity(2);
-            for (_, kind) in site.receiver.targets() {
-                if enabled(*kind) && !kinds.contains(kind) {
-                    kinds.push(*kind);
-                }
-            }
-            for kind in kinds {
-                entries.push((
-                    ReferenceIndexKey::StringKey {
-                        kind,
-                        key: site.key.clone(),
-                    },
-                    false,
-                ));
-            }
-        }
-        if is_laravel {
-            for site in &symbol_map.morph_column_sites {
-                entries.push((
-                    ReferenceIndexKey::StringKey {
-                        kind: crate::symbol_map::StringKeyKind::MorphAlias,
-                        key: site.key.clone(),
-                    },
-                    false,
-                ));
-            }
-        }
-
-        if let Some(classes) = self.symbols.uri_classes_index.read().get(uri).cloned() {
-            for class in classes {
-                for prop in &class.properties {
-                    if prop.name_offset == 0 {
-                        continue;
-                    }
-                    entries.push((
-                        ReferenceIndexKey::Member {
-                            name: prop
-                                .name
-                                .strip_prefix('$')
-                                .unwrap_or(&prop.name)
-                                .to_string(),
-                            is_static: prop.is_static,
-                        },
-                        true,
-                    ));
-                }
-            }
-        }
-
-        entries
-    }
-
-    /// The keys a span joins the index under, each paired with whether the
-    /// span counts as a reference to that key (see
-    /// [`reference_entries_for_symbol_map`]).
-    fn reference_keys_for_span(
-        &self,
-        uri: &str,
-        span: &crate::symbol_map::SymbolSpan,
-        namespaces: &OnceCell<Vec<NamespaceSpan>>,
-    ) -> Vec<(ReferenceIndexKey, bool)> {
-        match &span.kind {
-            SymbolKind::ClassReference { name, is_fqn, .. } => {
-                // A resource document only ever records fully-qualified
-                // names, so the short-name candidate key `class_keys` adds
-                // for a source spelling that could differ from the resolved
-                // FQN can never apply.  Skipping it keeps a large generated
-                // XML from adding one index entry per distinct class it
-                // names on top of the one that answers lookups.
-                if *is_fqn && self.is_resource_uri(uri) {
-                    return vec![(
-                        ReferenceIndexKey::class_owned(normalize_symbol_name(name)),
-                        true,
-                    )];
-                }
-                let resolved = if *is_fqn {
-                    normalize_symbol_name(name)
-                } else if let Some(fqn) = self.resolved_name_at(uri, span.start) {
-                    fqn
-                } else {
-                    let (use_map, namespace) = self.use_map_and_namespace_at(uri, span.start);
-                    normalize_symbol_name(resolve_to_fqn(name, &use_map, &namespace))
-                };
-                class_keys(&resolved, name)
-            }
-            SymbolKind::ClassDeclaration { name } => {
-                let namespace = self.namespace_at_offset(uri, span.start);
-                let fqn = build_fqn(name, namespace.as_deref());
-                class_keys(&fqn, name)
-            }
-            SymbolKind::SelfStaticParent(kind) if *kind != SelfStaticParentKind::This => {
-                let Some(current_class) = self.class_at_offset(uri, span.start) else {
-                    return Vec::new();
-                };
-                let fqn = match kind {
-                    SelfStaticParentKind::Parent => {
-                        current_class.parent_class.map(normalize_symbol_name)
-                    }
-                    _ => Some(current_class.fqn().to_string()),
-                };
-                fqn.map(|name| class_keys(&name, short_name(&name)))
-                    .unwrap_or_default()
-            }
-            SymbolKind::FunctionCall { name, .. } => {
-                let resolved = if let Some(fqn) = self.resolved_name_at(uri, span.start) {
-                    fqn
-                } else {
-                    let (use_map, namespace) = self.use_map_and_namespace_at(uri, span.start);
-                    normalize_symbol_name(resolve_to_fqn(name, &use_map, &namespace))
-                };
-                let global_fallback =
-                    self.names_global_fallback(uri, span.start, name, &resolved, namespaces);
-                function_keys(&resolved, name, global_fallback)
-            }
-            SymbolKind::ConstantReference { name, .. } => {
-                let resolved = self.constant_fqn_at(uri, span.start, name);
-                let global_fallback =
-                    self.names_global_fallback(uri, span.start, name, &resolved, namespaces);
-                constant_keys(&resolved, name, global_fallback)
-            }
-            SymbolKind::MemberAccess {
-                member_name,
-                is_static,
-                ..
-            }
-            | SymbolKind::MemberDeclaration {
-                name: member_name,
-                is_static,
-                ..
-            } => {
-                vec![(
-                    ReferenceIndexKey::Member {
-                        name: member_name.to_string(),
-                        is_static: *is_static,
-                    },
-                    true,
-                )]
-            }
-            SymbolKind::StringKey { kind, key, .. } => {
-                vec![(string_key_reference_key(*kind, key), true)]
-            }
-            _ => Vec::new(),
-        }
+        .build(self, uri, symbol_map)
     }
 
     fn is_reference_indexable_uri(&self, uri: &str) -> bool {
@@ -955,43 +769,6 @@ impl Backend {
             .lock()
             .iter()
             .any(|prefix| uri.starts_with(prefix.as_str()))
-    }
-
-    /// Whether an unqualified function or constant name at `offset` also
-    /// names the *global* symbol of that name.
-    ///
-    /// PHP resolves an unqualified function or constant by looking in the
-    /// current namespace first and falling back to the global namespace
-    /// when nothing is declared there, and mago-names always reports the
-    /// namespace-qualified guess.  So `helper()` written inside
-    /// `namespace App;` resolves to `App\helper` but calls the global
-    /// `helper()` whenever `App\helper` does not exist -- which is the
-    /// usual arrangement, since a global helper file is exactly what
-    /// namespaced code calls into.  Both spellings therefore have to be
-    /// credited with the reference; whether the namespaced one exists is
-    /// not knowable here (the file that would declare it may not be
-    /// parsed yet).
-    ///
-    /// A name reached through an import (`use function Foo\bar;`) or an
-    /// alias is *not* a fallback: it resolves to the imported symbol
-    /// outright.  Those are excluded by requiring that the resolved name
-    /// is the source name qualified with the namespace it was written in.
-    fn names_global_fallback(
-        &self,
-        uri: &str,
-        offset: u32,
-        source_name: &str,
-        resolved: &str,
-        namespaces: &OnceCell<Vec<NamespaceSpan>>,
-    ) -> bool {
-        if source_name.contains('\\') || !resolved.contains('\\') {
-            return false;
-        }
-        let spans = namespaces.get_or_init(|| self.namespace_spans_for_uri(uri));
-        let Some(namespace) = namespace_in_spans(spans, offset) else {
-            return false;
-        };
-        build_fqn(source_name, Some(namespace)) == resolved
     }
 
     fn resolved_name_at(&self, uri: &str, offset: u32) -> Option<String> {
@@ -1152,7 +929,7 @@ fn constant_keys(
 /// there would credit a global `\Widget` with it) -- except for the short
 /// name of a symbol PHP would fall back to globally, which the reference
 /// genuinely names as well; see
-/// [`names_global_fallback`](Backend::names_global_fallback).
+/// [`ReferenceFile`].
 fn symbol_name_keys(
     resolved: &str,
     source_name: &str,
@@ -1200,12 +977,14 @@ mod tests {
                     name: name.to_string(),
                     is_static,
                 },
-                HashMap::from([(Arc::from(uri), 1)]),
+                [(Arc::from(uri), 1)].into_iter().collect(),
             );
         }
         index.by_key.insert(
             ReferenceIndexKey::function("extendDependent"),
-            HashMap::from([(Arc::from("file:///project/function.php"), 1)]),
+            [(Arc::from("file:///project/function.php"), 1)]
+                .into_iter()
+                .collect(),
         );
         let candidates = index.method_candidate_uris(&["extenddependent", "EXTENDIMPLICIT"]);
         assert_eq!(candidates.len(), 2);

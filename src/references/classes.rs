@@ -54,7 +54,7 @@ impl Backend {
                             true
                         } else {
                             let resolved = fqn_resolver.fqn(name, false, span.start);
-                            class_names_match(strip_fqn_prefix(&resolved), target, target_short)
+                            class_names_match(strip_fqn_prefix(&resolved), target)
                         }
                     }
                     SymbolKind::ClassDeclaration { name } => {
@@ -79,7 +79,7 @@ impl Backend {
                         } => {
                             let resolved =
                                 fqn_resolver.class_fqn(name, *is_fqn, *context, span.start);
-                            class_names_match(strip_fqn_prefix(&resolved), target, target_short)
+                            class_names_match(strip_fqn_prefix(&resolved), target)
                         }
                         SymbolKind::ClassDeclaration { name } if include_declaration => {
                             if !name.eq_ignore_ascii_case(target_short) {
@@ -89,7 +89,7 @@ impl Backend {
                                     name,
                                     fqn_resolver.namespace_at(span.start).as_deref(),
                                 );
-                                class_names_match(&fqn, target, target_short)
+                                class_names_match(&fqn, target)
                             }
                         }
                         SymbolKind::SelfStaticParent(ssp_kind)
@@ -98,7 +98,7 @@ impl Backend {
                             if let Some(fqn) =
                                 self.resolve_keyword_to_fqn(ssp_kind, file.uri(), span.start)
                             {
-                                class_names_match(&fqn, target, target_short)
+                                class_names_match(&fqn, target)
                             } else {
                                 false
                             }

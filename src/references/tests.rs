@@ -186,7 +186,7 @@ fn workspace_indexing_batch_merges_disk_files() {
 #[test]
 fn indexing_work_order_processes_largest_files_first() {
     assert_eq!(
-        crate::indexing::preload::largest_first_work_order(&[10, 1, 50, 3]),
+        crate::indexing::batch::largest_first_work_order(&[10, 1, 50, 3]),
         vec![2, 0, 3, 1]
     );
 }
@@ -618,24 +618,21 @@ fn parse_paths_parallel_with_progress_handles_small_batches_and_missing_files() 
 
 #[test]
 fn workspace_parse_percentage_handles_empty_and_weighted_totals() {
+    assert_eq!(crate::indexing::batch::workspace_parse_percentage(0, 0), 95);
     assert_eq!(
-        crate::indexing::preload::workspace_parse_percentage(0, 0),
-        95
-    );
-    assert_eq!(
-        crate::indexing::preload::workspace_parse_percentage(0, 200),
+        crate::indexing::batch::workspace_parse_percentage(0, 200),
         5
     );
     assert_eq!(
-        crate::indexing::preload::workspace_parse_percentage(100, 200),
+        crate::indexing::batch::workspace_parse_percentage(100, 200),
         50
     );
     assert_eq!(
-        crate::indexing::preload::workspace_parse_percentage(200, 200),
+        crate::indexing::batch::workspace_parse_percentage(200, 200),
         95
     );
     assert_eq!(
-        crate::indexing::preload::workspace_parse_percentage(500, 200),
+        crate::indexing::batch::workspace_parse_percentage(500, 200),
         95
     );
 }

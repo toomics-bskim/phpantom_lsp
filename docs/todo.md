@@ -41,7 +41,6 @@ contributor even though it's short.
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ----------- |
 |     | Clear [refactoring gate](todo/refactor.md)                                                                                                                      | —           | —           |
 | P96 | [Reuse compatible Drupal discovery results in the full index](todo/performance.md#p96-reuse-compatible-drupal-discovery-results-in-the-full-index) | Low-Medium | Medium |
-| P91 | [Parsing and merging of the full index take turns](todo/performance.md#p91-parsing-and-merging-of-the-full-index-take-turns) | Medium-High | Medium-High |
 |     | **Release 1.1.0**                                                                                                                                               |             |             |
 
 # Feature Sets

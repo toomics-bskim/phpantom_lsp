@@ -8,6 +8,9 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+mod pipeline;
+pub(crate) use pipeline::for_each_pipelined;
+
 /// Run `work` over `0..count` on a pool of parse-sized workers, and
 /// return what the workers produced paired with the index it came from.
 ///

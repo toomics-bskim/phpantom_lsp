@@ -16,8 +16,8 @@
 //!   directory, whose declarations win over every other.
 //! - [`extra_roots`] — the editor's other workspace folders, indexed
 //!   beside the project as library code.
-//! - [`preload`] — autoload preloading and the `ensure_workspace_indexed*`
-//!   parallel parse pipeline.
+//! - [`preload`] — autoload preloading and `ensure_workspace_indexed*` orchestration.
+//! - [`batch`] — parallel parsing and bounded, ordered batch publication.
 //! - [`watch`] — applying `didChangeWatchedFiles` batches to the indexes.
 //! - [`reconcile`] — realigning the indexes with the file filters when
 //!   those change mid-session.
@@ -28,6 +28,7 @@
 
 use std::path::{Path, PathBuf};
 
+pub(crate) mod batch;
 mod dormant;
 mod extra_roots;
 mod init;

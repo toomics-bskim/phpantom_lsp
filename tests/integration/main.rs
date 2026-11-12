@@ -249,6 +249,7 @@ mod implementation;
 mod include_variables;
 mod indexing_include;
 mod indexing_phar;
+mod indexing_pipeline;
 mod indexing_workspace_folders;
 mod inlay_hints;
 mod laravel_app_facade_container;

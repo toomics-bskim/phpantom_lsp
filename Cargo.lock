@@ -1386,6 +1386,7 @@ dependencies = [
  "dunce",
  "etcetera",
  "flate2",
+ "foldhash",
  "globset",
  "ignore",
  "libc",

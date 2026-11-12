@@ -78,7 +78,7 @@ impl Backend {
                 // Re-resolving it would prefix the test's own namespace and
                 // produce `App\Tests\App\Calculator`.
                 let resolved = fqn_resolver.fqn(name, *is_fqn, span.start);
-                if !class_names_match(strip_fqn_prefix(&resolved), target, target_short) {
+                if !class_names_match(strip_fqn_prefix(&resolved), target) {
                     continue;
                 }
 

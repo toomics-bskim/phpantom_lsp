@@ -20,54 +20,6 @@ against that bar.
 
 ---
 
-## P91. Parsing and merging of the full index take turns
-
-**Impact: Medium-High · Complexity: Medium-High**
-
-On `projects/drupal` (15,900 PHP files, 32 cores, release build,
-2026-11-09) the server takes 2.4 s from `initialize` to idle, 1.7 s of it
-in the full index. PHPlumb parses every file of the same checkout fully,
-with its member index, in 0.49 s. Our parse is heavier per file, but that
-is not what decides the wall time: the parse workers keep only 4 to 6 of
-the 32 cores busy, while one tokio thread runs at 100% from the start of
-the full index to its end.
-
-Drupal core counts as installed-package code, so `parse_batch_parallel`
-parses it `DORMANT_CHUNK` (1,024) files at a time and publishes each chunk
-through `apply_ast_index_parse_results_batch` before the next one starts.
-That merge is serial, and the workers wait for it. Inside it,
-`reindex_references_for_symbol_maps_batch` builds every file's reference
-entries (`reference_entries_for_symbol_map`) on the merging thread, then
-inserts them into `std` `HashMap`s, so about a quarter of that thread's
-samples are SipHash (`hash_one::<&ReferenceIndexKey>`, `Arc<str>` keys).
-The debug build shows the same shape: 10.2 s of full index, 7.0 s of it
-for the 10,893 core files.
-
-Three changes, measured one at a time:
-
-- Build each file's reference entries in the parse worker, next to its
-  symbol map, so the merge only inserts.
-- Give the reference index (`by_key`, `uri_keys`, the per-key URI maps) a
-  fast non-cryptographic hasher.
-- Parse the next chunk while the previous one merges, keeping at most two
-  chunks of parses alive so the memory bound `DORMANT_CHUNK` exists for
-  still holds.
-
-The serial tail should shrink to the inserts alone, which would put the
-full index under 1 s on this checkout. Every project with installed
-packages under the workspace walk (Drupal core, WordPress core) goes
-through the same chunks, and every project's own files go through the same
-merge. Record a frame-pointer profile first (see the appendix) to confirm
-how the rest of the merging thread's time splits, since the flat profile
-spreads it thinly.
-
-**Where to look:** `parse_batch_parallel` and `parse_and_publish` in
-`src/indexing/preload.rs`, `apply_ast_index_parse_results_batch` in
-`src/parser/ast_update.rs`, `reindex_references_for_symbol_maps_batch` in
-`src/reference_index.rs`.
-
----
-
 ## P87. A run of conditional appends to one array is polynomial in its length
 
 **Impact: Medium · Complexity: High**

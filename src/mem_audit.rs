@@ -207,6 +207,7 @@ thread_local! {
 fn variant_name(t: &PhpType) -> &'static str {
     match t.kind() {
         TypeKind::Named(_) => "Named",
+        TypeKind::ClassNamed(_) => "ClassNamed",
         TypeKind::StaticType(_) => "StaticType",
         TypeKind::ThisType(_) => "ThisType",
         TypeKind::Nullable(_) => "Nullable",
@@ -263,7 +264,10 @@ fn ty(t: &PhpType) -> Sz {
     z.add(ARC + size_of::<TypeKind>());
 
     match t.kind() {
-        TypeKind::Named(_) | TypeKind::StaticType(_) | TypeKind::ThisType(_) => {}
+        TypeKind::Named(_)
+        | TypeKind::ClassNamed(_)
+        | TypeKind::StaticType(_)
+        | TypeKind::ThisType(_) => {}
         TypeKind::Nullable(b)
         | TypeKind::Array(b)
         | TypeKind::KeyOf(b)
@@ -1528,9 +1532,10 @@ pub(crate) fn report(backend: &Backend, runner_content_bytes: usize) {
         let idx = backend.reference_index.read();
         let (by_key, uri_keys, resolved_members) = idx.audit_maps();
         n_keys = by_key.len();
-        refs += map_buckets::<crate::reference_index::ReferenceIndexKey, HashMap<Arc<str>, u32>>(
-            by_key.capacity(),
-        );
+        refs += map_buckets::<
+            crate::reference_index::ReferenceIndexKey,
+            foldhash::HashMap<Arc<str>, u32>,
+        >(by_key.capacity());
         for (k, inner) in by_key {
             refs.add(k.audit_heap());
             n_key_uri_pairs += inner.len();
