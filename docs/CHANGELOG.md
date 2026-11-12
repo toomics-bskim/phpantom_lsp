@@ -243,6 +243,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Type inference
 
+- **Built-in contracts follow the PHP target.** PHP 5 calls retain their accepted arguments and resource and failure return types, keeping completion and argument diagnostics consistent with the selected runtime.
+
 - **Inline comments in multiline PHPDoc types.** Array shapes and type aliases retain their fields when a `//` comment follows a field, keeping completion and navigation available throughout the type.
 - **Loose comparisons follow the project's PHP version.** Branch types now preserve values that compare equal on PHP 5 and 7, including numeric string coercion, while keeping PHP 8's comparison rules.
 - **Known indirect names retain their types.** Completion and diagnostics resolve reads through statically known variable and member names. PHP 5 projects keep their original access order, including after formatting adds explicit braces.

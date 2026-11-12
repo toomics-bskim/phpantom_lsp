@@ -3,6 +3,9 @@
 #[path = "integration/common/mod.rs"]
 mod common;
 
+#[path = "compatibility/builtins.rs"]
+mod builtins;
+
 use std::path::Path;
 use std::time::Duration;
 

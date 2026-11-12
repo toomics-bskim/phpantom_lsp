@@ -96,7 +96,7 @@ hint; it is not evidence of support for the later primitive type.
 
 ## Delivery order
 
-Each numbered item is one implementation task and one PR. LP13–LP17
+Each numbered item is one implementation task and one PR. LP13, LP15–LP17
 address the remaining semantic and inference gaps. LP20 covers constructor
 access and explicit calls.
 LP19 covers the remaining edit producers; LP18 qualifies the final support
@@ -126,23 +126,6 @@ preserving their runtime type and version-appropriate severity; include
 modern error behavior and collisions between differently cased names.
 Include built-in names unavailable at the selected target, such as
 `PHP_INT_MIN` before PHP 7, in the undefined-name diagnostic checks.
-
-## LP14. Built-in argument and return contracts match PHP 5
-
-**Impact: High · Complexity: Medium-High**
-
-**Evidence.** `count_scalar` evaluates `count(42)` to `1` in both
-runtimes but receives `type_mismatch_argument`. Retaining an old function
-name is insufficient when its signature or behavior has changed.
-
-**Plan.** Correct versioned stub contracts and shared built-in inference,
-starting with `count`. Audit resource/object transitions and changed
-argument coercion or return values using runtime/reflection controls.
-Keep broad valid results such as the tested `substr`/`strpos` unions.
-
-**Done when.** Accepted legacy calls have no false type errors, invalid
-calls still diagnose, and PHP 7/8 contracts remain intact. Test extension
-APIs through declared stubs without requiring database/network access.
 
 ## LP15. Returned closures retain their bound receiver type
 
@@ -295,7 +278,7 @@ stale types for unknown mutations.
 
 ## LP18. Qualify and document the support contract
 
-**Impact: High · Complexity: Medium · Depends on: LP13–LP17, LP19–LP22**
+**Impact: High · Complexity: Medium · Depends on: LP13, LP15–LP17, LP19–LP22**
 
 **Plan.** Expand the regression matrix to remaining language and LSP
 surfaces before claiming full support: include/require and manual

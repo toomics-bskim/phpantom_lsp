@@ -204,6 +204,7 @@
 mod active_record;
 mod classes;
 mod functions;
+mod legacy;
 mod mockery;
 
 pub use classes::{apply_class_stub_patches, apply_third_party_class_patches};

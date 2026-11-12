@@ -74,7 +74,7 @@ fn array_map_links_callback_to_array_element() {
     func.parameters = vec![param("$callback", "callable"), param("$array", "array")].into();
     func.return_type = Some(PhpType::parse("array"));
 
-    apply_function_stub_patches(&mut func);
+    apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
 
     assert_eq!(func.template_params, vec![atom("TValue")]);
     assert_eq!(
@@ -102,7 +102,7 @@ fn array_filter_links_callback_to_array_element() {
     let mut func = empty_function("array_filter");
     func.parameters = vec![param("$array", "array"), param("$callback", "callable")].into();
 
-    apply_function_stub_patches(&mut func);
+    apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
 
     assert_eq!(func.template_params, vec![atom("TKey"), atom("TValue")]);
     assert_eq!(
@@ -131,7 +131,7 @@ fn array_map_unexpected_shape_not_patched() {
     let mut func = empty_function("array_map");
     func.parameters = vec![param("$other", "array")].into();
 
-    apply_function_stub_patches(&mut func);
+    apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
 
     assert!(func.template_params.is_empty());
     assert!(func.template_bindings.is_empty());
@@ -140,7 +140,7 @@ fn array_map_unexpected_shape_not_patched() {
 #[test]
 fn range_gets_conditional_return() {
     let mut func = empty_function("range");
-    apply_function_stub_patches(&mut func);
+    apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
     assert!(
         func.conditional_return.is_some(),
         "range() should have a conditional return type after patching"
@@ -150,7 +150,7 @@ fn range_gets_conditional_return() {
 #[test]
 fn str_word_count_gets_conditional_return() {
     let mut func = empty_function("str_word_count");
-    apply_function_stub_patches(&mut func);
+    apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
     let cond = func
         .conditional_return
         .expect("str_word_count() should have a conditional return type after patching");
@@ -167,7 +167,7 @@ fn stream_bucket_make_writeable_pre_84_becomes_stdclass() {
     func.return_type = Some(PhpType::parse("object|null"));
     func.native_return_type = Some(PhpType::parse("object|null"));
 
-    apply_function_stub_patches(&mut func);
+    apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
 
     assert_eq!(func.return_type, Some(PhpType::parse("stdClass|null")));
     assert_eq!(
@@ -182,7 +182,7 @@ fn stream_bucket_make_writeable_84_plus_unchanged() {
     func.return_type = Some(PhpType::parse("StreamBucket|null"));
     func.native_return_type = Some(PhpType::parse("StreamBucket|null"));
 
-    apply_function_stub_patches(&mut func);
+    apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
 
     assert_eq!(func.return_type, Some(PhpType::parse("StreamBucket|null")));
     assert_eq!(
@@ -197,7 +197,7 @@ fn ctype_family_and_define_accept_mixed() {
         let mut func = empty_function(name);
         func.parameters = vec![param("$text", "string")].into();
 
-        apply_function_stub_patches(&mut func);
+        apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
 
         assert_eq!(
             func.parameters[0].type_hint,
@@ -214,7 +214,7 @@ fn ctype_family_and_define_accept_mixed() {
     ]
     .into();
 
-    apply_function_stub_patches(&mut define);
+    apply_function_stub_patches(&mut define, crate::types::PhpVersion::default());
 
     assert_eq!(
         define.parameters[0].type_hint,
@@ -284,7 +284,7 @@ fn argument_dependent_builtins_get_conditional_returns() {
             .collect::<Vec<_>>()
             .into();
 
-        apply_function_stub_patches(&mut func);
+        apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
 
         let cond = func
             .conditional_return
@@ -301,7 +301,7 @@ fn getenv_keys_on_whichever_name_parameter_the_stub_declares() {
     let mut func = empty_function("getenv");
     func.parameters = vec![param("$varname", "string"), param("$local_only", "bool")].into();
 
-    apply_function_stub_patches(&mut func);
+    apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
 
     assert_eq!(
         func.conditional_return.map(|c| c.to_string()).as_deref(),
@@ -317,7 +317,7 @@ fn a_differently_shaped_stub_keeps_its_declared_return() {
     let mut func = empty_function("pathinfo");
     func.parameters = vec![param("$path", "string")].into();
 
-    apply_function_stub_patches(&mut func);
+    apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
 
     assert!(func.conditional_return.is_none());
 }
@@ -375,7 +375,7 @@ fn spl_autoload_register_types_its_callback_parameter() {
     let mut func = empty_function("spl_autoload_register");
     func.parameters = vec![param("$callback", "?callable"), param("$throw", "bool")].into();
 
-    apply_function_stub_patches(&mut func);
+    apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
 
     assert_eq!(
         func.parameters[0].type_hint,
@@ -400,7 +400,7 @@ fn builtins_that_keep_their_callback_mark_it_later_invoked() {
         let mut func = empty_function(name);
         func.parameters = vec![param("$signal", "int"), param(callback, "callable")].into();
 
-        apply_function_stub_patches(&mut func);
+        apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
 
         assert_eq!(func.parameters[0].callable_invocation, None, "{name}");
         assert_eq!(
@@ -412,7 +412,7 @@ fn builtins_that_keep_their_callback_mark_it_later_invoked() {
 
     let mut func = empty_function("call_user_func");
     func.parameters = vec![param("$callback", "callable")].into();
-    apply_function_stub_patches(&mut func);
+    apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
     assert_eq!(func.parameters[0].callable_invocation, None);
 }
 
@@ -421,7 +421,7 @@ fn spl_autoload_register_unexpected_shape_not_patched() {
     let mut func = empty_function("spl_autoload_register");
     func.parameters = vec![param("$other", "?callable")].into();
 
-    apply_function_stub_patches(&mut func);
+    apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
 
     assert_eq!(
         func.parameters[0].type_hint,
@@ -439,7 +439,7 @@ fn the_user_sort_family_types_its_comparison_callback() {
         let mut func = empty_function(name);
         func.parameters = vec![param("$array", "array"), param("$callback", "callable")].into();
 
-        apply_function_stub_patches(&mut func);
+        apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
 
         assert_eq!(
             func.parameters[0].type_hint,
@@ -469,7 +469,7 @@ fn a_differently_shaped_sort_stub_is_not_patched() {
     let mut func = empty_function("usort");
     func.parameters = vec![param("$callback", "callable"), param("$array", "array")].into();
 
-    apply_function_stub_patches(&mut func);
+    apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
 
     assert!(func.template_params.is_empty());
     assert_eq!(
@@ -483,7 +483,7 @@ fn an_unrelated_function_keeps_its_parameter_types() {
     let mut func = empty_function("str_pad");
     func.parameters = vec![param("$string", "string")].into();
 
-    apply_function_stub_patches(&mut func);
+    apply_function_stub_patches(&mut func, crate::types::PhpVersion::default());
 
     assert_eq!(func.parameters[0].type_hint, Some(PhpType::string()));
 }

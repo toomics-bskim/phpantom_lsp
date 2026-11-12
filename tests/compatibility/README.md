@@ -137,6 +137,30 @@ boundary is supplied by a provenance-scoped correction based on the official
 This does not establish whether an optional extension is installed, and
 package `@since` tags do not select a PHP release.
 
+## Built-in contracts
+
+`cargo test --test legacy_compatibility legacy_builtin` checks argument and
+return contracts with the embedded stubs, both stub load orders, and PHP
+5.5/5.6, 7.1/7.2 and 8.0/8.1 boundaries. Resource-producing extension APIs
+are checked through their declarations without opening database connections
+or making network requests. The shared call engine retains nullable BCMath
+results and the broad `substr`/`strpos` failure unions on legacy targets.
+
+[`builtins.json`](builtins.json) provides deterministic runtime controls.
+The optional export writes `builtins-5.5.json` and `builtins-5.6.json` for the
+reference runner. For a manual PHP 5 check, set `[php] version = "5.5"` and
+hover over `$value` in `<?php $value = count(42); $value;`: the result is an
+integer, and passing the scalar is accepted. Calling `count()` without its
+required argument still produces a diagnostic.
+
+Version boundaries follow the PHP manuals for
+[`count`](https://www.php.net/manual/en/function.count.php),
+[`mb_convert_encoding`](https://www.php.net/manual/en/function.mb-convert-encoding.php),
+[`bcdiv`](https://www.php.net/manual/en/function.bcdiv.php), and the
+[PHP 8 resource migration](https://www.php.net/manual/en/migration80.incompatible.php#migration80.incompatible.resource2object).
+PHP 7.2's non-countable warning remains diagnosable; PHP 8 keeps its stricter
+contract. These controls do not claim exhaustive coverage of extension APIs.
+
 ## Reference runtime checks
 
 Export fixtures while running the Rust checks, then execute them with an

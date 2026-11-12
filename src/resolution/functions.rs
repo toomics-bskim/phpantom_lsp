@@ -216,7 +216,7 @@ impl Backend {
         let stub_uri = format!("{}{}", crate::stubs::STUB_FUNCTION_URI_PREFIX, name);
         let unbundled = crate::stubs::is_unbundled_extension_stub(&stub_uri, stub_content);
         for func in &mut functions {
-            crate::stub_patches::apply_function_stub_patches(func);
+            crate::stub_patches::apply_function_stub_patches(func, self.php_version());
             func.from_unbundled_extension = unbundled;
         }
 

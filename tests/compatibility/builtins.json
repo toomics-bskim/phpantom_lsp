@@ -1,0 +1,13 @@
+[
+  {"id":"count_scalar", "body":"$probe = count(42);", "hover":"int", "value":["integer",1]},
+  {"id":"count_null", "body":"$probe = count(null);", "hover":"int", "value":["integer",0]},
+  {"id":"sizeof_false", "body":"$probe = sizeof(false);", "hover":"int", "value":["integer",1]},
+  {"id":"count_object", "body":"$probe = count(new stdClass());", "hover":"int", "value":["integer",1]},
+  {"id":"count_resource", "body":"$stream = fopen('php://memory', 'r'); $probe = count($stream); fclose($stream);", "hover":"int", "value":["integer",1]},
+  {"id":"count_array", "body":"$probe = count(array('a', 'b'));", "hover":"int", "value":["integer",2]},
+  {"id":"substr_past_end", "body":"$probe = substr('abc', 10);", "hover":"string|false", "value":["boolean",false]},
+  {"id":"strpos_ordinal", "body":"$probe = strpos('abc', 98);", "hover":"false", "value":["integer",1]},
+  {"id":"getenv_null", "body":"$probe = getenv(null);", "hover":"string|false", "value":["boolean",false]},
+  {"id":"bcdiv_zero", "body":"$probe = @bcdiv('1', '0');", "hover":"string", "value":["NULL",null]},
+  {"id":"bcsqrt_negative", "body":"$probe = @bcsqrt('-1');", "hover":"string", "value":["NULL",null]}
+]

@@ -525,7 +525,7 @@ impl Backend {
         if self.is_phpstorm_stubs_uri(uri) {
             let unbundled = crate::stubs::is_unbundled_extension_stub(uri, content);
             for func in &mut functions {
-                crate::stub_patches::apply_function_stub_patches(func);
+                crate::stub_patches::apply_function_stub_patches(func, self.php_version());
                 func.from_unbundled_extension = unbundled;
             }
             for (cls, _, _) in &mut decls.classes_with_ns {

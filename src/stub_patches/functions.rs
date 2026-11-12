@@ -2,7 +2,7 @@
 
 use crate::atom::atom;
 use crate::php_type::{PhpType, TypeKind, UndecidedReading};
-use crate::types::{CallableInvocation, FunctionInfo};
+use crate::types::{CallableInvocation, FunctionInfo, PhpVersion};
 
 /// Apply all registered stub patches to a freshly-parsed function.
 ///
@@ -10,7 +10,7 @@ use crate::types::{CallableInvocation, FunctionInfo};
 /// `FunctionInfo` is parsed from embedded phpstorm-stubs, before it is
 /// cached in `global_functions`.  Only functions with known deficiencies
 /// are patched; all others pass through unchanged.
-pub fn apply_function_stub_patches(func: &mut FunctionInfo) {
+pub fn apply_function_stub_patches(func: &mut FunctionInfo, version: PhpVersion) {
     match func.name.as_str() {
         "range" => patch_range(func),
         "str_word_count" => patch_str_word_count(func),
@@ -69,7 +69,11 @@ pub fn apply_function_stub_patches(func: &mut FunctionInfo) {
         // The arbitrary-precision functions answer with the number they
         // computed, which PHP 8 never replaces with `null` or `false`.
         "bcadd" | "bcsub" | "bcmul" | "bcdiv" | "bcmod" | "bcpow" | "bcpowmod" | "bcsqrt"
-        | "bcfloor" | "bcceil" | "bcround" => func.return_type = Some(PhpType::numeric_string()),
+        | "bcfloor" | "bcceil" | "bcround"
+            if version.major >= 8 =>
+        {
+            func.return_type = Some(PhpType::numeric_string())
+        }
         "define" => widen_parameter_to_mixed(func, "$value"),
         "array_udiff"
         | "array_udiff_assoc"
@@ -84,6 +88,7 @@ pub fn apply_function_stub_patches(func: &mut FunctionInfo) {
         name if name.starts_with("ctype_") => widen_parameter_to_mixed(func, "$text"),
         _ => {}
     }
+    super::legacy::apply(func, version);
     if crate::benevolent_builtins::function_is_benevolent(&func.name) {
         mark_benevolent(&mut func.return_type);
     }
