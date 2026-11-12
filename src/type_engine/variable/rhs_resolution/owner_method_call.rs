@@ -18,7 +18,7 @@ use crate::type_engine::resolver::VarResolutionCtx;
 use crate::type_engine::variable::resolution::build_var_resolver_from_ctx;
 
 use super::calls::resolve_return_type;
-use super::{resolve_rhs_expression, resolved_type_with_lookup};
+use super::resolved_type_with_lookup;
 
 /// Resolve a method's PHPStan conditional return type against the call-site
 /// arguments, returning the winning branch's type when it is definite and
@@ -141,32 +141,18 @@ fn resolve_call_site_arg_types<'c>(
         let (Some(method), Some(argument_list)) = (method, argument_list) else {
             return Vec::new();
         };
-        if argument_list.arguments.is_empty() || method.parameters.is_empty() {
-            return Vec::new();
-        }
-        let types: Vec<PhpType> =
-            crate::call_args::bind_args_to_params(&method.parameters, argument_list)
-                .into_iter()
-                .map(|bound| {
-                    let Some(expr) = bound else {
-                        return PhpType::mixed();
-                    };
-                    let resolved = resolve_rhs_expression(expr, ctx);
-                    if resolved.is_empty() {
-                        PhpType::mixed()
-                    } else {
-                        ResolvedType::types_joined(&resolved)
-                    }
-                })
-                .collect();
-        // A call that decided nothing asks the same question as no call
-        // site at all, so answer it under the same memo key rather than
-        // walking the body again for every such site.
-        if types.iter().any(PhpType::is_informative) {
-            types
-        } else {
-            Vec::new()
-        }
+        let texts = crate::type_engine::variable::raw_type_inference::extract_arg_texts_from_ast(
+            argument_list,
+            ctx.file.content,
+        );
+        let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+        let walker = super::calls::walker_arg_types(argument_list, ctx);
+        crate::type_engine::call_resolution::call_parameter_types(
+            &method.parameters,
+            &refs,
+            Some(&walker),
+            &ctx.as_resolution_ctx(),
+        )
     })
 }
 

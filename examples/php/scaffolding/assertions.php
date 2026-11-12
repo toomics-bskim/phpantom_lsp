@@ -2228,6 +2228,11 @@ function runDemoAssertions(): void
     assert($destructuring->selectedPen() instanceof Scaffolding\Pen);
     assert($destructuring->selectedPen()->color() === 'black');
     assert($destructuring->firstValue() === (PHP_VERSION_ID < 70000 ? 2 : 1));
+    $packs = new ArgumentPackDemo();
+    assert($packs->variadicPen() instanceof Scaffolding\Pen);
+    assert($packs->variadicPen()->color() === 'black');
+    assert($packs->unpackedPen() instanceof Scaffolding\Pen);
+    assert($packs->unpackedPen()->color() === 'black');
     echo "All assertions passed.\n";
 }
 

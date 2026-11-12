@@ -697,6 +697,14 @@ fn unify_template_shape(
 ) -> Option<PhpType> {
     match param_hint.kind() {
         TypeKind::Named(name) if &**name == tpl_name => Some(arg_type.clone()),
+        TypeKind::ClassString(Some(hint)) | TypeKind::InterfaceString(Some(hint)) => {
+            match arg_type.kind() {
+                TypeKind::ClassString(Some(inner)) | TypeKind::InterfaceString(Some(inner)) => {
+                    unify_template(hint, inner, tpl_name)
+                }
+                _ => None,
+            }
+        }
         TypeKind::Union(members) => {
             let mut has_bare = false;
             for member in members {
@@ -768,8 +776,8 @@ fn unify_template_shape(
             TypeKind::Array(arg_inner) => unify_template(inner, arg_inner, tpl_name),
             // `T[]` against `array<K, V>` / `list<V>`: the value type lines up.
             _ => arg_type
-                .extract_value_type(false)
-                .and_then(|v| unify_template(inner, v, tpl_name)),
+                .iterable_element_type()
+                .and_then(|v| unify_template(inner, &v, tpl_name)),
         },
         // `array{k: T}` against a shape: `T` is what the argument holds under
         // the same key.

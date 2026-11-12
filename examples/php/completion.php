@@ -6043,3 +6043,22 @@ class DestructuringWriteDemo
         return $first;
     }
 }
+
+// ─── Arguments carried through unannotated calls ───────────────────────
+
+class ArgumentPackDemo
+{
+    public function variadicPen(): Scaffolding\Pen
+    {
+        $pen = Scaffolding\firstArgument(new Scaffolding\Pen(), 'other');
+        // Try: $pen-> — Scaffolding\Pen members from the first argument.
+        return $pen;
+    }
+
+    public function unpackedPen(): Scaffolding\Pen
+    {
+        $pen = Scaffolding\secondArgument(...['other', new Scaffolding\Pen()]);
+        // Try: $pen-> — Scaffolding\Pen members from the unpacked array.
+        return $pen;
+    }
+}

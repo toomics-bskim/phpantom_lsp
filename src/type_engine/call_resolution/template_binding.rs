@@ -95,7 +95,22 @@ pub(crate) fn bind_template_args(
     // so a named argument (`id: Foo::class`) is routed to the parameter it
     // targets rather than its ordinal slot, and its `name:` prefix is
     // stripped off the value.
-    let bound = crate::call_args::bind_text_args_to_params(callee.parameters, arg_texts);
+    let expanded = arg_texts
+        .iter()
+        .any(|text| crate::call_args::unpacked_text_value(text).is_some())
+        .then(|| {
+            super::arg_type_resolution::bound_argument_types(
+                callee.parameters,
+                arg_texts,
+                walker_types,
+                ctx,
+            )
+        });
+    let bound = if expanded.is_some() {
+        vec![None; callee.parameters.len()]
+    } else {
+        crate::call_args::bind_text_args_to_params(callee.parameters, arg_texts)
+    };
 
     let param_index = |param_name: &Atom| {
         callee
@@ -128,6 +143,32 @@ pub(crate) fn bind_template_args(
         );
         let param_hint = via_bound.as_ref().or(param.type_hint.as_ref());
         let tpl_bound = callee.template_param_bounds.get(&atom(tpl_name));
+        if let Some(expanded) = &expanded {
+            let mut supplied = false;
+            let mut guaranteed = false;
+            for argument in expanded.iter().filter(|arg| arg.parameter == param_idx) {
+                supplied = true;
+                guaranteed |= !argument.uncertain;
+                if let Some(bound) =
+                    param_hint.and_then(|hint| unify_template(hint, &argument.ty, tpl_name))
+                {
+                    insert_or_union(&mut subs, tpl_name.to_string(), bound);
+                }
+            }
+            // An unknown-length pack may omit this slot. Its default is
+            // another possible binding, resolved where it was declared.
+            if !guaranteed
+                && let Some(default) = param.default_value.as_deref()
+                && let Some(ty) = Backend::resolve_arg_text_to_type(default, &declared_ctx)
+                && let Some(bound) = param_hint.and_then(|hint| unify_template(hint, &ty, tpl_name))
+            {
+                insert_or_union(&mut subs, tpl_name.to_string(), bound);
+                supplied = true;
+            }
+            if supplied {
+                continue;
+            }
+        }
 
         let (arg_text, ctx) = match bound.get(param_idx).and_then(|o| o.as_deref()) {
             Some(text) => (text, ctx),

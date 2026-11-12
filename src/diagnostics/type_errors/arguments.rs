@@ -318,7 +318,6 @@ impl Backend {
         let _parse_guard = with_parse_cache(content);
 
         // Build the set of call site args_start offsets for the AST walk.
-        // Only include sites without argument unpacking.
         let call_site_starts: HashSet<u32> = symbol_map
             .call_sites
             .iter()
@@ -573,11 +572,9 @@ impl Backend {
     }
 }
 
-/// Whether the argument check looks at a call site.  Calls with argument
-/// unpacking are skipped: the types of the individual arguments are
-/// unknown.
+/// Whether this incremental pass reports the call site.
 fn is_checked_site(call_site: &CallSite) -> bool {
-    !call_site.has_unpacking && super::super::incremental::reports_site(call_site.args_start)
+    super::super::incremental::reports_site(call_site.args_start)
 }
 
 /// The parameter an argument fills: the one called `name` for a named
@@ -720,6 +717,10 @@ impl<'a> ArgumentCheck<'a> {
     }
 
     fn check_call_site(&self, call_site: &CallSite, call: &CheckedCall, out: &mut Vec<Diagnostic>) {
+        if call_site.has_unpacking {
+            self.check_unpacked_call(call_site, call, out);
+            return;
+        }
         // Track how many positional args we've seen so far for
         // mapping positional args to parameter indices.
         let mut positional_idx: usize = 0;
@@ -749,6 +750,59 @@ impl<'a> ArgumentCheck<'a> {
             first_param_arg,
             out,
         );
+    }
+
+    fn check_unpacked_call(&self, site: &CallSite, call: &CheckedCall, out: &mut Vec<Diagnostic>) {
+        let routed =
+            crate::call_args::bind_typed_arguments(
+                &call.target.parameters,
+                call.args.args.iter().enumerate().map(|(index, arg)| {
+                    crate::call_args::TypedArgument {
+                        name: named_argument(site, index),
+                        ty: arg.ty.clone(),
+                        spread: site.spread_arg_indices.contains(&(index as u32)),
+                    }
+                }),
+            );
+        for (source, original) in call.args.args.iter().enumerate() {
+            let mut possible_errors = Vec::new();
+            let mut possible_acceptance = false;
+            for bound in routed.iter().filter(|arg| arg.source == source) {
+                let expanded = ResolvedArg {
+                    ty: bound.ty.clone(),
+                    start: original.start,
+                    end: original.end,
+                    array_string_literals: Vec::new(),
+                    enumerates_all_keys: false,
+                };
+                if bound.uncertain {
+                    let before = possible_errors.len();
+                    self.check_argument(
+                        call,
+                        &expanded,
+                        source,
+                        bound.parameter + 1,
+                        &call.target.parameters[bound.parameter],
+                        &mut possible_errors,
+                    );
+                    possible_acceptance |= possible_errors.len() == before;
+                } else {
+                    self.check_argument(
+                        call,
+                        &expanded,
+                        source,
+                        bound.parameter + 1,
+                        &call.target.parameters[bound.parameter],
+                        out,
+                    );
+                }
+            }
+            // Unknown-length packs can land in any of the remaining slots.
+            // Reject their element type only when no candidate accepts it.
+            if !possible_acceptance && let Some(diagnostic) = possible_errors.into_iter().next() {
+                out.push(diagnostic);
+            }
+        }
     }
 
     /// Check one argument against the parameter it fills.

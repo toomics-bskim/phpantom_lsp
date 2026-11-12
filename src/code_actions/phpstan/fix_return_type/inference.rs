@@ -92,7 +92,8 @@ impl Backend {
         infer_return_type_at(
             FileCtx::new(content, &local_classes, &class_loader, &source_class_loader)
                 .with_imports(Some(&block.use_map))
-                .with_backend(Some(self)),
+                .with_backend(Some(self))
+                .with_uri(Some(uri)),
             offset,
             Some(&function_loader),
             self_as_marker,

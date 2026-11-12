@@ -17,6 +17,18 @@ use mago_syntax::cst::{
 use crate::atom::bytes_to_str;
 use crate::types::ParameterInfo;
 
+pub(crate) mod typed;
+pub(crate) use typed::{TypedArgument, bind_typed_arguments, parameter_types};
+
+/// The expression an argument unpacks. A bare `...` is the subject-text
+/// renderer's placeholder for an ordinary argument it cannot represent.
+pub(crate) fn unpacked_text_value(text: &str) -> Option<&str> {
+    text.trim_start()
+        .strip_prefix("...")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
 /// Strip the leading `$` from a parameter name (e.g. `"$text"` → `"text"`).
 fn param_name_bare(param: &ParameterInfo) -> &str {
     let name = param.name.as_str();

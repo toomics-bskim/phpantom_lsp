@@ -381,10 +381,10 @@ function test(): void {
     );
 }
 
-// ─── No diagnostic: argument unpacking ──────────────────────────────────────
+// ─── Argument unpacking checks known element types ──────────────────────────────────────
 
 #[test]
-fn no_diagnostic_for_unpacking() {
+fn diagnostic_for_incompatible_unpacked_arguments() {
     let php = r#"<?php
 function takes_ints(int $a, int $b): void {}
 
@@ -395,8 +395,8 @@ function test(): void {
 "#;
     let diags = collect(php);
     assert!(
-        !has_type_error(&diags),
-        "Should not flag call with argument unpacking, got: {diags:?}"
+        has_type_error(&diags),
+        "Unpacked strings do not satisfy integer parameters: {diags:?}"
     );
 }
 

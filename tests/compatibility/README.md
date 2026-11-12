@@ -142,6 +142,18 @@ These expectations follow the [constant syntax reference](https://www.php.net/ma
 and [`define` reference](https://www.php.net/manual/en/function.define.php),
 with the pinned runtimes checking name collisions and import behavior.
 
+## Call argument packs
+
+[`variadic_calls.rs`](variadic_calls.rs) checks argument propagation through
+unannotated functions and methods, generic signatures, and unpacked arrays.
+Known array entries retain their call order; unknown-length packs contribute
+their element types without assuming a fixed length. Argument type checks use
+the same parameter mapping. Cross-file and named-argument controls cover the
+modern target, and PHP 5.5 retains its syntax diagnostics.
+
+`variadic-calls-*.json` checks values against PHP 5.5.38, 5.6.40, and 8.5.10,
+including PHP 5.5 syntax rejection and PHP 8 named unpacking.
+
 ## Built-in availability
 
 `cargo test --test integration builtin_availability` checks introduction and

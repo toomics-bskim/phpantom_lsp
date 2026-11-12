@@ -15,6 +15,9 @@ mod constructor_access;
 #[path = "compatibility/constant_names.rs"]
 mod constant_names;
 
+#[path = "compatibility/variadic_calls.rs"]
+mod variadic_calls;
+
 use std::path::Path;
 use std::time::Duration;
 

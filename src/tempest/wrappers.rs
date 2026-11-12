@@ -154,22 +154,27 @@ pub(super) fn invocation(
         }
         _ => return None,
     };
-    // A spread can change every positional binding. Leave such values unknown
-    // until the shared argument binder exposes its expanded parameter types.
     let spread = args
         .arguments
         .iter()
         .any(|arg| matches!(arg, Argument::Positional(arg) if arg.ellipsis.is_some()));
     let bindings = crate::call_args::bind_args_to_params(&params, args);
-    let mut arguments: Vec<_> = bindings
-        .iter()
-        .map(|expr| {
-            expr.filter(|_| !spread)
-                .map_or_else(PhpType::mixed, |expr| {
-                    super::view_data::expression_type(expr, content, &loaders)
-                })
-        })
-        .collect();
+    let routed = crate::call_args::bind_typed_arguments(
+        &params,
+        args.arguments.iter().map(|arg| {
+            let (name, value, spread) = match arg {
+                Argument::Positional(arg) => (None, arg.value, arg.ellipsis.is_some()),
+                Argument::Named(arg) => (Some(bytes_to_str(arg.name.value)), arg.value, false),
+            };
+            crate::call_args::TypedArgument {
+                name,
+                ty: super::view_data::expression_type(value, content, &loaders),
+                spread,
+            }
+        }),
+    );
+    let mut arguments = crate::call_args::parameter_types(&params, &routed);
+    arguments.resize_with(params.len(), PhpType::mixed);
     if !spread
         && bindings
             .iter()

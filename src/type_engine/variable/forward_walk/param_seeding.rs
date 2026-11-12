@@ -119,7 +119,6 @@ pub(crate) fn seed_params<'b>(
 
     for (index, param) in parameters.enumerate() {
         let pname = bytes_to_str(param.variable.name).to_string();
-        let is_variadic = param.ellipsis.is_some();
         let native_type = param.hint.as_ref().map(|h| extract_hint_type(h));
 
         // For promoted constructor properties, check for an inline
@@ -221,11 +220,7 @@ pub(crate) fn seed_params<'b>(
             continue;
         }
 
-        // A variadic parameter collects the arguments into an array
-        // rather than taking the one at its index, so the call site's
-        // types don't line up with it.
-        if !is_variadic
-            && let Some(arg_type) = call_args.as_ref().and_then(|args| args.get(index))
+        if let Some(arg_type) = call_args.as_ref().and_then(|args| args.get(index))
             && let Some(seeded) = seed_from_call_site(arg_type, &param_results, ctx)
         {
             scope.seed(&pname, seeded);

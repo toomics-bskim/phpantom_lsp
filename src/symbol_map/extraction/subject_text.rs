@@ -548,9 +548,9 @@ fn lower_spine_base<'a>(expr: &'a Expression<'a>) -> Option<SubjectExpr> {
         // element that cannot be represented is elided as `...` so that
         // callers (especially conditional return-type resolution) can see
         // that an argument was provided and is not null.
-        Expression::Array(array) => {
-            let parts = array
-                .elements
+        Expression::Array(Array { elements, .. })
+        | Expression::LegacyArray(LegacyArray { elements, .. }) => {
+            let parts = elements
                 .iter()
                 .map(|element| match element {
                     ArrayElement::KeyValue(kv) => {
@@ -750,7 +750,14 @@ pub(super) fn format_all_call_args(args: &TokenSeparatedSequence<'_, Argument<'_
     let mut parts = Vec::new();
     for arg in args.iter() {
         let text = match arg {
-            Argument::Positional(pos) => format_arg_expr(pos.value),
+            Argument::Positional(pos) => {
+                let value = format_arg_expr(pos.value);
+                if pos.ellipsis.is_some() {
+                    format!("...{value}")
+                } else {
+                    value
+                }
+            }
             Argument::Named(named) => format!(
                 "{}: {}",
                 bytes_to_str(named.name.value),

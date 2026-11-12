@@ -1061,7 +1061,14 @@ impl Backend {
                 && let Some(backend) = ctx.file.backend
                 && let Some(inferred) =
                     crate::type_engine::call_resolution::try_infer_function_body_return_type(
-                        backend, &func_info,
+                        backend,
+                        &func_info,
+                        &crate::type_engine::call_resolution::call_parameter_types(
+                            &func_info.parameters,
+                            &split_top_level_commas(text_args),
+                            None,
+                            ctx,
+                        ),
                     )
             {
                 let classes =
@@ -1426,6 +1433,23 @@ fn method_call_return_hint(
     written: &dyn Fn(&str) -> String,
     ctx: &ResolutionCtx<'_>,
 ) -> Option<PhpType> {
+    if m.return_type.is_none()
+        && m.conditional_return().is_none()
+        && m.name_offset != 0
+        && !m.is_virtual
+    {
+        return crate::type_engine::call_resolution::try_infer_body_return_type(
+            ctx.file.backend?,
+            &owner.fqn(),
+            m,
+            &crate::type_engine::call_resolution::call_parameter_types(
+                &m.parameters,
+                &split_top_level_commas(text_args),
+                None,
+                ctx,
+            ),
+        );
+    }
     let arg_ty_resolver = |t: &str| Backend::resolve_arg_text_to_type(t, ctx);
     let default_ty_resolver = |t: &str, namespace: Option<&str>| {
         Backend::resolve_arg_text_to_type(t, &ctx.written_in(namespace))

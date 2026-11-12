@@ -378,7 +378,19 @@ fn named_function_call<'b>(
         && let Some(backend) = ctx.file.backend
         && let Some(inferred) =
             crate::type_engine::call_resolution::try_infer_function_body_return_type(
-                backend, &func_info,
+                backend,
+                &func_info,
+                &{
+                    let texts = extract_arg_texts_from_ast(argument_list, ctx.file.content);
+                    let refs: Vec<&str> = texts.iter().map(String::as_str).collect();
+                    let walker = walker_arg_types(argument_list, ctx);
+                    crate::type_engine::call_resolution::call_parameter_types(
+                        &func_info.parameters,
+                        &refs,
+                        Some(&walker),
+                        &ctx.as_resolution_ctx(),
+                    )
+                },
             )
     {
         return Some(vec![resolved_type_with_lookup(

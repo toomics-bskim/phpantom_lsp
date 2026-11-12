@@ -667,7 +667,18 @@ impl Backend {
                     &mr_ctx
                         .call_args
                         .map(|resolve| resolve())
-                        .unwrap_or_default(),
+                        .unwrap_or_else(|| {
+                            crate::call_args::parameter_types(
+                                &method.parameters,
+                                &crate::call_args::typed::bind_typed_text_arguments(
+                                    &method.parameters,
+                                    &split_top_level_commas(text_args),
+                                    |text| {
+                                        mr_ctx.arg_type_resolver.and_then(|resolve| resolve(text))
+                                    },
+                                ),
+                            )
+                        }),
                 )
             {
                 // A body-inferred `return $this` yields a self-like marker.

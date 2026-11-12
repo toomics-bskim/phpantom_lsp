@@ -80,7 +80,9 @@ impl Backend {
             } else if func.return_type.is_none()
                 && let Some(inferred) =
                     crate::type_engine::call_resolution::try_infer_function_body_return_type(
-                        self, &func,
+                        self,
+                        &func,
+                        &[],
                     )
             {
                 func.return_type = Some(inferred);

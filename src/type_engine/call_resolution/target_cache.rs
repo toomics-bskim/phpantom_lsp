@@ -454,6 +454,7 @@ fn infer_body_return_type(
 pub(crate) fn try_infer_function_body_return_type(
     backend: &Backend,
     func: &FunctionInfo,
+    call_args: &[PhpType],
 ) -> Option<PhpType> {
     if func.name_offset == 0 {
         return None;
@@ -463,7 +464,11 @@ pub(crate) fn try_infer_function_body_return_type(
         _ => func.name,
     };
     let visited_key = (atom(""), fqn);
-    let memo_key = (visited_key.0, visited_key.1, Box::<[PhpType]>::default());
+    let memo_key = (
+        visited_key.0,
+        visited_key.1,
+        Box::<[PhpType]>::from(call_args),
+    );
 
     crate::type_engine::memoized_bounded_inference(
         &BODY_INFER_MEMO,
@@ -473,7 +478,7 @@ pub(crate) fn try_infer_function_body_return_type(
         memo_key,
         visited_key,
         || {
-            infer_function_body_return_type(backend, func, &fqn)
+            infer_function_body_return_type(backend, func, &fqn, call_args)
                 .filter(|t| !t.is_mixed() && !t.is_void())
         },
     )
@@ -484,6 +489,7 @@ fn infer_function_body_return_type(
     backend: &Backend,
     func: &FunctionInfo,
     fqn: &str,
+    call_args: &[PhpType],
 ) -> Option<PhpType> {
     #[cfg(test)]
     TEST_BODY_INFERENCES.with(|count| count.set(count.get() + 1));
@@ -505,6 +511,16 @@ fn infer_function_body_return_type(
     }
     let _parse_guard = crate::parser::with_parse_cache_arc(Arc::clone(&content));
 
+    let start = (!call_args.is_empty())
+        .then(|| {
+            crate::parser::with_parsed_program(&content, "function_arguments", |program, _| {
+                use crate::code_actions::cursor_context::{FunctionKinds, find_enclosing_function};
+                find_enclosing_function(program, func.name_offset, FunctionKinds::All)
+                    .map(|function| function.span().start.offset)
+            })
+        })
+        .flatten();
+    let _seeded = start.map(|start| with_declaration_arguments(&file_uri, start, call_args));
     let result = backend.infer_return_type_at(&file_uri, &content, func.name_offset, false)?;
     let inferred = result.effective.unwrap_or(result.native);
 

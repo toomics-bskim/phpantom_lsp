@@ -96,7 +96,7 @@ hint; it is not evidence of support for the later primitive type.
 
 ## Delivery order
 
-Each numbered item is one implementation task and one PR. LP15–LP17
+Each numbered item is one implementation task and one PR. LP15–LP16
 address the remaining semantic and inference gaps. LP18 qualifies the final
 support claim.
 Dependencies below are explicit;
@@ -139,25 +139,6 @@ precedence and lazy evaluation.
 foreach values with several yield sites. Generator returns and `yield
 from` obey the selected version's boundary; body inference does not scan
 unrelated functions on every request.
-
-## LP17. Variadic and unpacked calls carry argument types
-
-**Impact: Medium-High · Complexity: High**
-
-**Evidence.** On PHP 5.6, `variadic_value` returns `'first'` and
-`unpack_value` returns `'b'`, but neither probe has a hover type.
-Both files are correctly rejected by the PHP 5.5 runtime. These samples
-combine untyped parameters and return inference: ordinary-call and modern
-controls are needed before assigning the root cause to unpacking.
-
-**Plan.** Isolate the missing propagation in the existing call engine,
-then map known unpacked shapes and variadic argument packs to parameter
-and return types. Include PHPDoc/generic signatures and unknown-length
-packs instead of hardcoding the sample's string values.
-
-**Done when.** PHP 5.6 calls produce sound result types and argument
-diagnostics; PHP 5.5 still reports the unavailable syntax.
-Ordinary calls and modern unpacking keep their behavior.
 
 ## LP21. Dynamic names preserve writes and scope effects
 
@@ -211,7 +192,7 @@ stale types for unknown mutations.
 
 ## LP18. Qualify and document the support contract
 
-**Impact: High · Complexity: Medium · Depends on: LP15–LP17, LP21–LP22**
+**Impact: High · Complexity: Medium · Depends on: LP15–LP16, LP21–LP22**
 
 **Plan.** Expand the regression matrix to remaining language and LSP
 surfaces before claiming full support: include/require and manual

@@ -16,6 +16,35 @@ use crate::type_engine::resolver::ResolutionCtx;
 use crate::type_engine::subject_expr::split_call_subject_raw;
 use crate::type_engine::variable::array_func_rules::ArrayFuncArgs;
 
+/// Resolve arguments only when a consumer needs their parameter-local types.
+pub(crate) fn bound_argument_types(
+    parameters: &[ParameterInfo],
+    arguments: &[&str],
+    walker: Option<crate::type_engine::variable::rhs_resolution::ArgWalkerTypes<'_>>,
+    ctx: &ResolutionCtx<'_>,
+) -> Vec<crate::call_args::typed::BoundArgument> {
+    crate::call_args::typed::bind_typed_text_arguments(parameters, arguments, |value| {
+        walker
+            .and_then(|resolve| resolve(value))
+            .or_else(|| Backend::resolve_arg_text_to_type(value, ctx))
+    })
+}
+
+pub(crate) fn call_parameter_types(
+    parameters: &[ParameterInfo],
+    arguments: &[&str],
+    walker: Option<crate::type_engine::variable::rhs_resolution::ArgWalkerTypes<'_>>,
+    ctx: &ResolutionCtx<'_>,
+) -> Vec<PhpType> {
+    if parameters.is_empty() {
+        return Vec::new();
+    }
+    crate::call_args::parameter_types(
+        parameters,
+        &bound_argument_types(parameters, arguments, walker, ctx),
+    )
+}
+
 thread_local! {
     /// Re-entry guard for [`Backend::resolve_inline_arg_raw_type`].
     /// Tracks the argument texts currently being resolved on this stack.

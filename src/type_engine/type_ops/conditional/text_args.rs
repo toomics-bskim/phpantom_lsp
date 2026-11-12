@@ -79,6 +79,40 @@ struct TextArgs<'a> {
 }
 
 impl TextArgs<'_> {
+    /// The parameter's value after PHP expands the call's argument packs.
+    fn unpacked_type(&self, param_idx: usize, args: &[&str]) -> Option<PhpType> {
+        let routed =
+            crate::call_args::typed::bind_typed_text_arguments(self.params, args, |value| {
+                self.tpl
+                    .arg_type_resolver
+                    .and_then(|resolve| resolve(value))
+            });
+        let param = self.params.get(param_idx)?;
+        if param.is_variadic {
+            return crate::call_args::parameter_types(self.params, &routed)
+                .get(param_idx)
+                .cloned();
+        }
+        let mut values = Vec::new();
+        let mut guaranteed = false;
+        for arg in routed.iter().filter(|arg| arg.parameter == param_idx) {
+            values.push(arg.ty.clone());
+            guaranteed |= !arg.uncertain;
+        }
+        if values.is_empty() {
+            return None;
+        }
+        if !guaranteed && let Some(default) = param.default_value.as_deref() {
+            values.push(
+                self.tpl
+                    .default_type_resolver
+                    .and_then(|resolve| resolve(default, self.class_ctx.namespace))
+                    .unwrap_or_else(PhpType::mixed),
+            );
+        }
+        Some(PhpType::union(values))
+    }
+
     /// The resolved type of the argument `arg` bound to the parameter at
     /// `param_idx`, as narrowed by any enclosing condition on it.
     fn arg_type(&self, param_idx: usize, arg: &str) -> Option<PhpType> {
@@ -193,8 +227,29 @@ impl TextArgs<'_> {
         // them to parameters by PHP's rules so a named argument resolves
         // to the parameter it targets rather than its ordinal slot.
         let args = split_top_level_commas(text_args);
-        let bound_text = crate::call_args::bind_text_args_to_params(params, &args);
-        let arg_text_owned = bound_text.get(param_idx).cloned().flatten();
+        let has_unpacking = args
+            .iter()
+            .any(|arg| crate::call_args::unpacked_text_value(arg).is_some());
+        let expanded = has_unpacking
+            .then(|| self.unpacked_type(param_idx, &args))
+            .flatten();
+        let expanded = expanded.map(|ty| {
+            if is_variadic && matches!(cond.condition.kind(), TypeKind::ClassString(_)) {
+                ty.iterable_element_type().unwrap_or_else(PhpType::mixed)
+            } else {
+                ty
+            }
+        });
+        let arg_text_owned = if has_unpacking {
+            // There is no single source expression for an expanded slot.
+            // Its type below, rather than the pack's text, decides the branch.
+            expanded.as_ref().map(|_| "<unpacked>".to_string())
+        } else {
+            crate::call_args::bind_text_args_to_params(params, &args)
+                .get(param_idx)
+                .cloned()
+                .flatten()
+        };
         // An omitted argument takes the parameter's declared default at
         // runtime, so the condition is decided against that default
         // rather than being left undecidable. The default's own
@@ -213,6 +268,13 @@ impl TextArgs<'_> {
         // The default's constants are the ones the callee's namespace
         // names, so its type is read there rather than at the call site.
         let reader = TextArgs {
+            narrowed: match expanded.as_ref() {
+                Some(ty) => self
+                    .narrowed
+                    .filter(|(idx, _)| *idx == param_idx)
+                    .or(Some((param_idx, ty))),
+                None => self.narrowed,
+            },
             defaulted: default_text_resolved
                 .is_some()
                 .then_some(param_idx)
@@ -235,7 +297,8 @@ impl TextArgs<'_> {
         }
 
         if matches!(condition.kind(), TypeKind::ClassString(_)) {
-            let variadic_args = is_variadic.then(|| args.get(param_idx..).unwrap_or_default());
+            let variadic_args =
+                (is_variadic && !has_unpacking).then(|| args.get(param_idx..).unwrap_or_default());
             reader.class_string_condition(cond, condition, param_idx, variadic_args, arg_text)
         } else if condition.is_null() {
             let variadic_passed = is_variadic.then_some(arg_text_owned.is_some());
