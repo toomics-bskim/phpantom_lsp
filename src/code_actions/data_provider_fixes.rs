@@ -100,7 +100,13 @@ impl Backend {
                     };
                     (
                         format!("Create data provider '{}'", finding.method_name),
-                        create_provider_edit(content, class, *class_end, finding),
+                        create_provider_edit(
+                            content,
+                            class,
+                            *class_end,
+                            finding,
+                            self.php_version(),
+                        ),
                         None,
                     )
                 }
@@ -176,6 +182,7 @@ fn create_provider_edit(
     class: &crate::types::ClassInfo,
     class_end: u32,
     finding: &ProviderFinding,
+    version: crate::types::PhpVersion,
 ) -> TextEdit {
     let indent = detect_class_indent(content, class);
     let unit = super::indent_unit(content);
@@ -188,8 +195,13 @@ fn create_provider_edit(
     } else {
         (brace, "\n")
     };
+    let return_hint = if version.supports_builtin_type("iterable") {
+        ": iterable"
+    } else {
+        ""
+    };
     let new_text = format!(
-        "{lead}\n{indent}public static function {name}(): iterable\n{indent}{{\n{indent}{unit}return [];\n{indent}}}\n",
+        "{lead}\n{indent}public static function {name}(){return_hint}\n{indent}{{\n{indent}{unit}return [];\n{indent}}}\n",
         name = finding.method_name,
     );
     let position = offset_to_position(content, at);

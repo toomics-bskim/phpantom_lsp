@@ -33,6 +33,7 @@ struct TestPlan<'a> {
     /// `None` for a Pest file.
     style: Option<PhpUnitStyle>,
     strict_types: bool,
+    version: crate::types::PhpVersion,
     indent: String,
 }
 
@@ -125,6 +126,7 @@ impl Backend {
             class_name,
             style,
             strict_types: has_strict_types(content),
+            version: self.php_version(),
             indent: detect_class_indent(content, class),
         };
         let source = render_test(&plan);
@@ -284,6 +286,11 @@ impl Imports {
 /// The source of the new test file.
 fn render_test(plan: &TestPlan<'_>) -> String {
     let indent = &plan.indent;
+    let return_hint = if plan.version.supports_void_return_type() {
+        ": void"
+    } else {
+        ""
+    };
     let mut imports = Imports {
         namespace: plan.namespace.clone(),
         used: Vec::new(),
@@ -300,8 +307,7 @@ fn render_test(plan: &TestPlan<'_>) -> String {
         Some(style) => {
             // The subject claims its short name first: it is the name the
             // test is about.
-            let subject = style
-                .attributes
+            let subject = (style.attributes && plan.version.supports_attributes())
                 .then(|| imports.name_for(&plan.subject_fqn, &plan.class_name));
             let base = imports.name_for(&style.base_class, &plan.class_name);
             if let Some(subject) = subject {
@@ -317,7 +323,7 @@ fn render_test(plan: &TestPlan<'_>) -> String {
                     body.push('\n');
                 }
                 body.push_str(&format!(
-                    "{indent}public function test{}(): void\n{indent}{{\n{indent}{indent}self::markTestIncomplete();\n{indent}}}\n",
+                    "{indent}public function test{}(){return_hint}\n{indent}{{\n{indent}{indent}self::markTestIncomplete();\n{indent}}}\n",
                     upper_first(method)
                 ));
             }
@@ -326,7 +332,7 @@ fn render_test(plan: &TestPlan<'_>) -> String {
     }
 
     let mut src = String::from("<?php\n\n");
-    if plan.strict_types {
+    if plan.strict_types && plan.version.supports_return_types() {
         src.push_str("declare(strict_types=1);\n\n");
     }
     if let Some(namespace) = &plan.namespace {
@@ -363,7 +369,40 @@ mod tests {
             class_name: "InvoiceTest".to_string(),
             style,
             strict_types: true,
+            version: crate::types::PhpVersion::default(),
             indent: "    ".to_string(),
+        }
+    }
+
+    #[test]
+    fn generated_tests_respect_the_target_php_syntax() {
+        use crate::types::PhpVersion;
+        for version in [
+            PhpVersion::new(5, 5),
+            PhpVersion::new(5, 6),
+            PhpVersion::new(7, 0),
+            PhpVersion::new(7, 1),
+            PhpVersion::new(8, 0),
+        ] {
+            let mut plan = plan(Some(PhpUnitStyle {
+                base_class: PHPUNIT_TEST_CASE.to_string(),
+                attributes: true,
+            }));
+            plan.version = version;
+            let source = render_test(&plan);
+            assert_eq!(
+                source.contains("declare(strict_types"),
+                version.supports_return_types()
+            );
+            assert_eq!(
+                source.contains("(): void"),
+                version.supports_void_return_type()
+            );
+            assert_eq!(
+                source.contains("#[CoversClass"),
+                version.supports_attributes()
+            );
+            assert_eq!(source.contains("@covers"), !version.supports_attributes());
         }
     }
 

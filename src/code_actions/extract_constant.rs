@@ -605,7 +605,11 @@ impl Backend {
         let base_name = generate_constant_name(trimmed);
         let const_name = deduplicate_constant_name(&base_name, &class_info.existing_constants);
 
-        let visibility = class_info.context_visibility;
+        let visibility = if self.php_version().supports_constant_visibility() {
+            class_info.context_visibility
+        } else {
+            ""
+        };
         let indent = detect_member_indent(content, class_info.body_start);
         let php_version = self.php_version();
 

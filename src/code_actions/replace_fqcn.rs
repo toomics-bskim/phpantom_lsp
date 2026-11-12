@@ -280,11 +280,15 @@ impl Backend {
     ) -> Vec<QualifiedSymbol<'a>> {
         let mut symbols: Vec<QualifiedSymbol<'a>> = Vec::new();
         let mut index: HashMap<(ImportKind, String), usize> = HashMap::new();
+        let function_imports = self.php_version().supports_function_imports();
 
         for span in &symbol_map.spans {
             let Some((name, kind)) = symbol_name_and_kind(span) else {
                 continue;
             };
+            if kind != ImportKind::Class && !function_imports {
+                continue;
+            }
             if NamespaceSpan::containing(namespace_spans, span.start).map(|block| block.start)
                 != block_start
             {

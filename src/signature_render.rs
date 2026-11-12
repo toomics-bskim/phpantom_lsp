@@ -9,13 +9,24 @@ use std::collections::HashMap;
 
 use crate::atom::Atom;
 use crate::php_type::{PhpType, TypeKind};
-use crate::types::{ClassInfo, MethodInfo, ParameterInfo};
+use crate::types::{ClassInfo, MethodInfo, ParameterInfo, PhpVersion};
 
 /// Format the parameter list for a method stub.
+#[cfg(test)]
 pub(crate) fn format_params(
     method: &MethodInfo,
     use_map: &HashMap<String, String>,
     file_namespace: &Option<String>,
+) -> String {
+    format_params_for_version(method, use_map, file_namespace, PhpVersion::default())
+}
+
+/// Render the signature for the selected PHP target.
+pub(crate) fn format_params_for_version(
+    method: &MethodInfo,
+    use_map: &HashMap<String, String>,
+    file_namespace: &Option<String>,
+    version: PhpVersion,
 ) -> String {
     let mut parts = Vec::new();
 
@@ -26,7 +37,9 @@ pub(crate) fn format_params(
         // docblock `@param` types: parameter types are contravariant, so
         // promoting a docblock type (e.g. `string`) onto an untyped parent
         // parameter would illegally narrow the override.
-        if let Some(ref hint) = param.native_type_hint {
+        if let Some(ref hint) = param.native_type_hint
+            && version.supports_parameter_hint(hint)
+        {
             let shortened = shorten_php_type_direct(hint, use_map, file_namespace);
             if !shortened.is_empty() {
                 s.push_str(&shortened);
@@ -91,13 +104,29 @@ fn is_valid_native_hint(ty: &PhpType, template_params: &[Atom]) -> bool {
 }
 
 /// Format the return type hint for a method stub.
+#[cfg(test)]
 pub(crate) fn format_return_type(
     method: &MethodInfo,
     use_map: &HashMap<String, String>,
     file_namespace: &Option<String>,
 ) -> String {
+    format_return_type_for_version(method, use_map, file_namespace, PhpVersion::default())
+}
+
+/// Render the signature for the selected PHP target.
+pub(crate) fn format_return_type_for_version(
+    method: &MethodInfo,
+    use_map: &HashMap<String, String>,
+    file_namespace: &Option<String>,
+    version: PhpVersion,
+) -> String {
+    if !version.supports_return_types() {
+        return String::new();
+    }
     // Prefer native return type (the actual PHP source-level type hint).
-    if let Some(ref native) = method.native_return_type {
+    if let Some(ref native) = method.native_return_type
+        && version.supports_return_hint(native)
+    {
         let shortened = shorten_php_type_direct(native, use_map, file_namespace);
         if !shortened.is_empty() {
             return format!(": {}", shortened);
@@ -112,7 +141,10 @@ pub(crate) fn format_return_type(
         // itself uses for fluent returns.
         let ret = replace_this_with_static(ret);
         let shortened = shorten_php_type_direct(&ret, use_map, file_namespace);
-        if is_valid_native_hint(&ret, method.template_params()) && !shortened.is_empty() {
+        if version.supports_return_hint(&ret)
+            && is_valid_native_hint(&ret, method.template_params())
+            && !shortened.is_empty()
+        {
             return format!(": {}", shortened);
         }
     }
@@ -155,6 +187,35 @@ pub(crate) fn native_param_hint(param: &ParameterInfo) -> Option<PhpType> {
         return Some(native.or_null());
     }
     Some(native)
+}
+
+/// Preserve contracts that the target cannot express in a native signature.
+pub(crate) fn omitted_type_tags(
+    method: &MethodInfo,
+    use_map: &HashMap<String, String>,
+    file_namespace: &Option<String>,
+    version: PhpVersion,
+) -> Vec<String> {
+    let mut tags = Vec::new();
+    for param in &method.parameters {
+        if let Some(hint) = param.type_hint.as_ref()
+            && param
+                .native_type_hint
+                .as_ref()
+                .is_none_or(|native| !version.supports_parameter_hint(native))
+        {
+            let hint = shorten_php_type_direct(hint, use_map, file_namespace);
+            let name = param.name.trim_start_matches('$');
+            tags.push(format!("@param {hint} ${name}"));
+        }
+    }
+    if let Some(ret) = method.return_type.as_ref()
+        && !version.supports_return_hint(ret)
+    {
+        let ret = shorten_php_type_direct(ret, use_map, file_namespace);
+        tags.push(format!("@return {ret}"));
+    }
+    tags
 }
 
 /// Replace every `$this` in the type tree with `static`, the closest

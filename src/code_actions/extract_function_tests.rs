@@ -433,6 +433,7 @@ fn param_list_typed() {
 #[test]
 fn return_type_void() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: String::new(),
         params: vec![],
         returns: vec![],
@@ -451,6 +452,7 @@ fn return_type_void() {
 #[test]
 fn return_type_single() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: String::new(),
         params: vec![],
         returns: vec![("$x".to_string(), PhpType::parse("int"))],
@@ -469,6 +471,7 @@ fn return_type_single() {
 #[test]
 fn return_type_multiple() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: String::new(),
         params: vec![],
         returns: vec![
@@ -490,6 +493,7 @@ fn return_type_multiple() {
 #[test]
 fn return_type_trailing_return() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: String::new(),
         params: vec![],
         returns: vec![],
@@ -508,6 +512,7 @@ fn return_type_trailing_return() {
 #[test]
 fn return_type_void_guards() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: String::new(),
         params: vec![],
         returns: vec![],
@@ -526,6 +531,7 @@ fn return_type_void_guards() {
 #[test]
 fn return_type_uniform_guards() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: String::new(),
         params: vec![],
         returns: vec![],
@@ -544,6 +550,7 @@ fn return_type_uniform_guards() {
 #[test]
 fn return_type_sentinel_null_with_type() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: String::new(),
         params: vec![],
         returns: vec![],
@@ -562,6 +569,7 @@ fn return_type_sentinel_null_with_type() {
 #[test]
 fn return_type_null_guard_with_value() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: String::new(),
         params: vec![],
         returns: vec![("$sound".to_string(), PhpType::parse("string"))],
@@ -580,6 +588,7 @@ fn return_type_null_guard_with_value() {
 #[test]
 fn return_type_null_guard_with_value_already_nullable() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: String::new(),
         params: vec![],
         returns: vec![("$val".to_string(), PhpType::parse("?int"))],
@@ -600,6 +609,7 @@ fn return_type_void_guard_with_value() {
     // Void guards with a computed value — return type is still
     // nullable (the extracted function returns null on guard-fire).
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: String::new(),
         params: vec![],
         returns: vec![("$sound".to_string(), PhpType::parse("string"))],
@@ -1048,6 +1058,7 @@ fn name_uniform_guards() {
 #[test]
 fn call_site_no_returns() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "extracted".to_string(),
         params: vec![("$x".to_string(), PhpType::parse("int"))],
         returns: vec![],
@@ -1067,6 +1078,7 @@ fn call_site_no_returns() {
 #[test]
 fn call_site_single_return() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "extracted".to_string(),
         params: vec![("$x".to_string(), PhpType::parse("int"))],
         returns: vec![("$result".to_string(), PhpType::parse("int"))],
@@ -1086,6 +1098,7 @@ fn call_site_single_return() {
 #[test]
 fn call_site_multiple_returns() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "extracted".to_string(),
         params: vec![],
         returns: vec![
@@ -1108,6 +1121,7 @@ fn call_site_multiple_returns() {
 #[test]
 fn call_site_method() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "runGuard".to_string(),
         params: vec![("$x".to_string(), PhpType::parse("int"))],
         returns: vec![],
@@ -1127,6 +1141,7 @@ fn call_site_method() {
 #[test]
 fn call_site_static_method() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "computeTotal".to_string(),
         params: vec![],
         returns: vec![],
@@ -1146,6 +1161,7 @@ fn call_site_static_method() {
 #[test]
 fn call_site_trailing_return() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "extracted".to_string(),
         params: vec![("$x".to_string(), PhpType::parse("int"))],
         returns: vec![],
@@ -1165,6 +1181,7 @@ fn call_site_trailing_return() {
 #[test]
 fn call_site_void_guards() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "extracted".to_string(),
         params: vec![("$x".to_string(), PhpType::untyped())],
         returns: vec![],
@@ -1184,6 +1201,7 @@ fn call_site_void_guards() {
 #[test]
 fn call_site_uniform_false_guards() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "extracted".to_string(),
         params: vec![("$x".to_string(), PhpType::untyped())],
         returns: vec![],
@@ -1203,6 +1221,7 @@ fn call_site_uniform_false_guards() {
 #[test]
 fn call_site_sentinel_null() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "extracted".to_string(),
         params: vec![("$x".to_string(), PhpType::untyped())],
         returns: vec![],
@@ -1225,6 +1244,7 @@ fn call_site_sentinel_null() {
 #[test]
 fn call_site_null_guard_with_value() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "extracted".to_string(),
         params: vec![("$obj".to_string(), PhpType::untyped())],
         returns: vec![("$sound".to_string(), PhpType::parse("string"))],
@@ -1247,6 +1267,7 @@ fn call_site_null_guard_with_value() {
 #[test]
 fn call_site_void_guard_with_value() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "extracted".to_string(),
         params: vec![("$obj".to_string(), PhpType::untyped())],
         returns: vec![("$sound".to_string(), PhpType::parse("string"))],
@@ -1271,6 +1292,7 @@ fn call_site_void_guard_with_value() {
 #[test]
 fn definition_method_no_params_void() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "extracted".to_string(),
         params: vec![],
         returns: vec![],
@@ -1294,6 +1316,7 @@ fn definition_method_no_params_void() {
 #[test]
 fn definition_function_with_params_and_return() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "extracted".to_string(),
         params: vec![("$x".to_string(), PhpType::parse("int"))],
         returns: vec![("$result".to_string(), PhpType::parse("string"))],
@@ -1317,6 +1340,7 @@ fn definition_function_with_params_and_return() {
 #[test]
 fn definition_static_method() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "extracted".to_string(),
         params: vec![("$x".to_string(), PhpType::parse("int"))],
         returns: vec![],
@@ -1339,6 +1363,7 @@ fn definition_static_method() {
 #[test]
 fn definition_with_trailing_return() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "extracted".to_string(),
         params: vec![("$x".to_string(), PhpType::parse("int"))],
         returns: vec![],
@@ -1372,6 +1397,7 @@ fn definition_with_trailing_return() {
 #[test]
 fn definition_void_guards_appends_return_true() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "validate".to_string(),
         params: vec![("$x".to_string(), PhpType::untyped())],
         returns: vec![],
@@ -1398,6 +1424,7 @@ fn definition_void_guards_appends_return_true() {
 #[test]
 fn definition_uniform_false_guards_appends_return_true() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "validate".to_string(),
         params: vec![("$x".to_string(), PhpType::untyped())],
         returns: vec![],
@@ -1424,6 +1451,7 @@ fn definition_uniform_false_guards_appends_return_true() {
 #[test]
 fn definition_uniform_true_guards_appends_return_false() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "validate".to_string(),
         params: vec![("$x".to_string(), PhpType::untyped())],
         returns: vec![],
@@ -1446,6 +1474,7 @@ fn definition_uniform_true_guards_appends_return_false() {
 #[test]
 fn definition_sentinel_null_appends_return_null() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "classify".to_string(),
         params: vec![("$x".to_string(), PhpType::untyped())],
         returns: vec![],
@@ -1472,6 +1501,7 @@ fn definition_sentinel_null_appends_return_null() {
 #[test]
 fn definition_null_guard_with_value_appends_return_variable() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "getSound".to_string(),
         params: vec![],
         returns: vec![("$sound".to_string(), PhpType::parse("string"))],
@@ -1504,6 +1534,7 @@ fn definition_null_guard_with_value_appends_return_variable() {
 fn definition_void_guard_with_value_rewrites_returns() {
     // Void guards + return value: bare `return;` → `return null;`
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "getSound".to_string(),
         params: vec![],
         returns: vec![("$sound".to_string(), PhpType::parse("string"))],
@@ -1640,6 +1671,7 @@ fn void_guards_definition_rewrites_body() {
     // End-to-end: the definition should contain `return false;`
     // for the guards and `return true;` for the fall-through.
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "validate".to_string(),
         params: vec![("$x".to_string(), PhpType::untyped())],
         returns: vec![],
@@ -1674,6 +1706,7 @@ fn uniform_null_definition_rewrites_body() {
     // `return null;` guards should become `return false;` in the
     // extracted function since the return type is bool.
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "validate".to_string(),
         params: vec![("$id".to_string(), PhpType::untyped())],
         returns: vec![],
@@ -1944,6 +1977,7 @@ fn docblock_return_type_hint_for_docblock_single_return() {
 #[test]
 fn definition_includes_docblock_for_array_param() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "process".to_string(),
         params: vec![("$items".to_string(), PhpType::parse("array"))],
         returns: vec![],
@@ -1986,6 +2020,7 @@ fn definition_includes_docblock_for_array_param() {
 #[test]
 fn definition_no_docblock_for_scalar_params() {
     let info = ExtractionInfo {
+        version: crate::types::PhpVersion::default(),
         name: "add".to_string(),
         params: vec![
             ("$a".to_string(), PhpType::parse("int")),

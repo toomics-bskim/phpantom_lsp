@@ -19,7 +19,9 @@ use tower_lsp_server::gen_lsp_types::{
 use crate::class_lookup::{Fqn, ResolvedClassLoader};
 use crate::php_type::PhpType;
 use crate::signature_render::{
-    format_params, format_return_type, native_hint_expresses_return_type, native_param_hint,
+    format_params_for_version as format_params,
+    format_return_type_for_version as format_return_type, native_hint_expresses_return_type,
+    native_param_hint,
 };
 use crate::types::{
     ClassInfo, ClassLikeKind, ConstantInfo, MethodInfo, PhpVersion, PropertyInfo, PropertySource,
@@ -346,16 +348,21 @@ pub(crate) fn build_override_completions(
 
     let mut items = Vec::new();
     for (method, declaring, skip_override_attr) in methods {
+        if !opts.php_version.supports_variadics() && method.parameters.iter().any(|p| p.is_variadic)
+        {
+            continue;
+        }
         // PHPDoc is inherited from parent classes and interfaces, but not
         // from traits, so an override of a trait method restates the
         // docblock-only types above the new declaration.
-        let doc_edit = if *skip_override_attr {
+        let doc_edit = if *skip_override_attr || !opts.php_version.supports_return_types() {
             trait_override_docblock_edit(method, opts)
         } else {
             override_edit.clone()
         };
-        let params = format_params(method, opts.use_map, opts.file_namespace);
-        let return_type = format_return_type(method, opts.use_map, opts.file_namespace);
+        let params = format_params(method, opts.use_map, opts.file_namespace, opts.php_version);
+        let return_type =
+            format_return_type(method, opts.use_map, opts.file_namespace, opts.php_version);
         let label = if return_type.is_empty() {
             format!("{}({})", method.name, params)
         } else {
@@ -435,7 +442,12 @@ fn trait_override_docblock_edit(
         let Some(hint) = param.type_hint.as_ref() else {
             continue;
         };
-        if native_param_hint(param).as_ref() == Some(hint) {
+        if native_param_hint(param).as_ref() == Some(hint)
+            && param
+                .native_type_hint
+                .as_ref()
+                .is_some_and(|ty| opts.php_version.supports_parameter_hint(ty))
+        {
             continue;
         }
         let ty = shorten_type_display(hint, opts.use_map, opts.file_namespace);
@@ -452,7 +464,8 @@ fn trait_override_docblock_edit(
     }
 
     if let Some(ret) = method.return_type.as_ref()
-        && !native_hint_expresses_return_type(method)
+        && (!opts.php_version.supports_return_hint(ret)
+            || !native_hint_expresses_return_type(method))
     {
         let ty = shorten_type_display(ret, opts.use_map, opts.file_namespace);
         if !ty.is_empty() {

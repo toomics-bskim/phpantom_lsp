@@ -111,6 +111,9 @@ fn try_simplify_ternary(
     content: &str,
     php_version: PhpVersion,
 ) -> Option<Simplification> {
+    if !php_version.supports_null_coalescing() {
+        return None;
+    }
     // Only handle full ternaries (not short ternary `$a ?: $b`).
     let then_expr = cond.then?;
 

@@ -175,6 +175,7 @@ impl Backend {
         uri: &str,
         position: Position,
     ) -> (Vec<CompletionItem>, bool) {
+        let function_imports = self.php_version().supports_function_imports();
         let prefix_lower = strip_fqn_prefix(prefix).to_ascii_lowercase();
         let mut seen: HashSet<String> = HashSet::new();
         let mut items: Vec<CompletionItem> = Vec::new();
@@ -233,10 +234,11 @@ impl Backend {
                     // Check for import conflict: another function with
                     // the same short name is already imported.
                     let has_conflict = is_namespaced
-                        && !same_ns
-                        && use_block
-                            .as_ref()
-                            .is_some_and(|ub| ub.function_import_conflicts(&fqn));
+                        && (!function_imports
+                            || !same_ns
+                                && use_block
+                                    .as_ref()
+                                    .is_some_and(|ub| ub.function_import_conflicts(&fqn)));
 
                     let additional_text_edits = if is_namespaced && !same_ns && !has_conflict {
                         use_block
@@ -304,9 +306,10 @@ impl Backend {
                     items.push(build_use_import_item(fqn.to_owned(), fqn, "4", false, uri));
                 } else {
                     let has_conflict = is_namespaced
-                        && use_block
-                            .as_ref()
-                            .is_some_and(|ub| ub.function_import_conflicts(fqn));
+                        && (!function_imports
+                            || use_block
+                                .as_ref()
+                                .is_some_and(|ub| ub.function_import_conflicts(fqn)));
 
                     let additional_text_edits = if is_namespaced && !has_conflict {
                         use_block
@@ -376,7 +379,7 @@ impl Backend {
                     uri,
                 ));
             } else {
-                let additional_text_edits = if is_namespaced {
+                let additional_text_edits = if is_namespaced && function_imports {
                     use_block
                         .as_ref()
                         .and_then(|ub| build_use_function_edit(name, ub))
@@ -387,7 +390,11 @@ impl Backend {
                 items.push(
                     FunctionItemBuilder::new(
                         sn.to_string(),
-                        format!("{sn}()$0"),
+                        if is_namespaced && !function_imports {
+                            format!("\\{name}()$0")
+                        } else {
+                            format!("{sn}()$0")
+                        },
                         sn.to_string(),
                         flat_symbol_sort_text(
                             sn,

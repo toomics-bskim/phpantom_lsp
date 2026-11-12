@@ -6,6 +6,9 @@ mod common;
 #[path = "compatibility/builtins.rs"]
 mod builtins;
 
+#[path = "compatibility/generated_edits.rs"]
+mod generated_edits;
+
 use std::path::Path;
 use std::time::Duration;
 

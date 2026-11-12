@@ -352,6 +352,7 @@ pub(crate) fn build_keyword_completions(
     prefix: &str,
     class_ctx: ClassNameContext,
     ctx: KeywordContext,
+    version: crate::types::PhpVersion,
 ) -> Vec<CompletionItem> {
     if !matches!(class_ctx, ClassNameContext::Any) {
         return Vec::new();
@@ -362,7 +363,7 @@ pub(crate) fn build_keyword_completions(
         .iter()
         .enumerate()
         .filter(|(_, keyword)| keyword.starts_with(&prefix_lower))
-        .filter(|(_, keyword)| keyword_allowed(keyword, ctx))
+        .filter(|(_, keyword)| version.supports_keyword(keyword) && keyword_allowed(keyword, ctx))
         .map(|(idx, keyword)| CompletionItem {
             label: (*keyword).to_string(),
             kind: Some(CompletionItemKind::Keyword),

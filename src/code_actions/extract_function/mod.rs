@@ -233,7 +233,12 @@ impl Backend {
         let typed_params =
             self.resolve_param_types(uri, content, start as u32, &classification.parameters);
         let enclosing_param_order = resolve_enclosing_param_order(content, start as u32);
-        let typed_params = sort_params_by_enclosing_order(typed_params, &enclosing_param_order);
+        let mut typed_params = sort_params_by_enclosing_order(typed_params, &enclosing_param_order);
+        for (_, cleaned, _) in &mut typed_params {
+            if !self.php_version().supports_parameter_hint(cleaned) {
+                *cleaned = PhpType::untyped();
+            }
+        }
         let typed_returns =
             self.resolve_param_types(uri, content, start as u32, &classification.return_values);
 
@@ -265,7 +270,7 @@ impl Backend {
         });
 
         // ── PHPDoc generation ───────────────────────────────────────
-        let return_type_for_docblock = build_return_type_hint_for_docblock(
+        let mut return_type_for_docblock = build_return_type_hint_for_docblock(
             &return_strategy,
             &trailing_return_type,
             &typed_returns,
@@ -276,6 +281,12 @@ impl Backend {
             enclosing_docblock_return.as_ref(),
             &typed_returns,
         );
+        if !self
+            .php_version()
+            .supports_return_hint(&return_type_for_docblock)
+        {
+            return_type_for_docblock = PhpType::untyped();
+        }
         let ctx = self.file_context_at(uri, start as u32);
         let class_loader = self.resolved_class_loader(&ctx);
         let docblock = build_docblock_for_extraction(
@@ -299,6 +310,7 @@ impl Backend {
             .collect();
 
         let info = ExtractionInfo {
+            version: self.php_version(),
             name: fn_name,
             params: params_for_info,
             returns: returns_for_info,

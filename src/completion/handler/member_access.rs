@@ -427,6 +427,7 @@ impl Backend {
                 &partial,
                 crate::completion::class_completion::ClassNameContext::Any,
                 keyword_ctx,
+                self.php_version(),
             )
         };
 

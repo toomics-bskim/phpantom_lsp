@@ -65,6 +65,9 @@ impl Backend {
         params: &CodeActionParams,
         out: &mut Vec<CodeActionResponse>,
     ) {
+        if !self.php_version().supports_promoted_properties() {
+            return;
+        }
         let doc_uri: Uri = match uri.parse() {
             Ok(u) => u,
             Err(_) => return,

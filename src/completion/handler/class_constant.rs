@@ -161,10 +161,17 @@ impl Backend {
         uri: &str,
     ) -> Option<CompletionResponse> {
         let partial_lower = th_ctx.partial.to_lowercase();
+        let version = self.php_version();
         let space_prefix = if th_ctx.needs_space_prefix { " " } else { "" };
         let mut items: Vec<CompletionItem> =
             crate::completion::type_hint_completion::PHP_NATIVE_TYPES
                 .iter()
+                .filter(|t| {
+                    matches!(**t, "self" | "parent")
+                        || version.supports_builtin_type(t)
+                        || (**t == "static"
+                            && version.supports_return_hint(&crate::php_type::PhpType::static_()))
+                })
                 .filter(|t| t.to_lowercase().starts_with(&partial_lower))
                 .enumerate()
                 .map(|(idx, t)| CompletionItem {
@@ -426,6 +433,7 @@ impl Backend {
                         "",
                         class_ctx,
                         keyword_ctx,
+                        self.php_version(),
                     );
                     if items.is_empty() {
                         return None;
@@ -533,7 +541,7 @@ impl Backend {
             // partial is a case-sensitive prefix of the keyword.  This
             // lets the user type `use f` → select "function" → continue
             // with a function name.
-            if "function".starts_with(&partial) {
+            if self.php_version().supports_function_imports() && "function".starts_with(&partial) {
                 items.insert(
                     0,
                     CompletionItem {
@@ -547,7 +555,7 @@ impl Backend {
                     },
                 );
             }
-            if "const".starts_with(&partial) {
+            if self.php_version().supports_function_imports() && "const".starts_with(&partial) {
                 items.insert(
                     0,
                     CompletionItem {
@@ -604,6 +612,7 @@ impl Backend {
             &partial,
             class_ctx,
             keyword_ctx,
+            self.php_version(),
         );
         let (constant_items, const_incomplete) =
             self.build_constant_completions(&partial, current_uri, position);

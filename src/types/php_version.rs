@@ -4,6 +4,8 @@
 
 use super::*;
 
+mod generated_types;
+
 /// A PHP major.minor version used for stub filtering and language capabilities.
 ///
 /// phpstorm-stubs annotate functions, methods, and parameters with
@@ -46,6 +48,46 @@ impl PhpVersion {
     /// Whether properties may declare `get` and `set` hooks.
     pub fn supports_property_hooks(self) -> bool {
         self >= Self::new(8, 4)
+    }
+
+    /// Whether functions and constants can be imported with `use`.
+    pub fn supports_function_imports(self) -> bool {
+        self >= Self::new(5, 6)
+    }
+
+    /// Whether parameter lists and calls can use variadics.
+    pub fn supports_variadics(self) -> bool {
+        self >= Self::new(5, 6)
+    }
+
+    /// Whether assignments can use short array destructuring.
+    pub fn supports_short_destructuring(self) -> bool {
+        self >= Self::new(7, 1)
+    }
+
+    /// Whether class constants can declare visibility.
+    pub fn supports_constant_visibility(self) -> bool {
+        self >= Self::new(7, 1)
+    }
+
+    /// Whether expressions can use null coalescing.
+    pub fn supports_null_coalescing(self) -> bool {
+        self >= Self::new(7, 0)
+    }
+
+    /// Whether source may declare attributes.
+    pub fn supports_attributes(self) -> bool {
+        self >= Self::new(8, 0)
+    }
+
+    /// Whether a declaration or expression keyword is available.
+    pub fn supports_keyword(self, keyword: &str) -> bool {
+        self >= match keyword {
+            "fn" => Self::new(7, 4),
+            "match" => Self::new(8, 0),
+            "enum" | "readonly" => Self::new(8, 1),
+            _ => Self::new(5, 5),
+        }
     }
 
     /// Whether a lowercase native type name has its built-in meaning at this version.

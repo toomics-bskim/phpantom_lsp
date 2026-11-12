@@ -151,7 +151,8 @@ impl Backend {
 
         // ── Promoted constructor ────────────────────────────────────────
         if self.php_version().supports_promoted_properties() {
-            let constructor_text = build_promoted_constructor(&props, &indent);
+            let constructor_text =
+                build_promoted_constructor_for_version(&props, &indent, self.php_version());
 
             // Build the list of edits: one deletion per property
             // declaration, plus one insertion for the constructor.
@@ -418,31 +419,7 @@ fn build_constructor(props: &[QualifyingProperty], indent: &str, version: PhpVer
 
 /// A documented primitive must not become a class hint on an older target.
 fn parameter_hint_available(hint: &PhpType, version: PhpVersion) -> bool {
-    match hint.kind() {
-        TypeKind::Named(name) => match name.as_str() {
-            "void" | "never" | "static" => false,
-            "null" | "false" | "true" => version >= PhpVersion::new(8, 2),
-            "array" | "callable" | "bool" | "int" | "float" | "string" | "iterable" | "object"
-            | "mixed" => version.supports_builtin_type(name),
-            _ => true,
-        },
-        TypeKind::Nullable(inner) => {
-            version >= PhpVersion::new(7, 1) && parameter_hint_available(inner, version)
-        }
-        TypeKind::Union(members) => {
-            version >= PhpVersion::new(8, 0)
-                && members.iter().all(|member| match member.kind() {
-                    TypeKind::Named(name) if matches!(name.as_str(), "null" | "false") => true,
-                    TypeKind::Intersection(_) => {
-                        version >= PhpVersion::new(8, 2)
-                            && parameter_hint_available(member, version)
-                    }
-                    _ => parameter_hint_available(member, version),
-                })
-        }
-        TypeKind::Intersection(_) => version >= PhpVersion::new(8, 1),
-        _ => false,
-    }
+    version.supports_parameter_hint(hint)
 }
 
 /// One constructor parameter per property, rendered by `declare` with the
@@ -470,10 +447,43 @@ fn required_first_params(
 /// Build the promoted constructor source text.  Each property becomes a
 /// promoted parameter (`visibility [readonly] type $name [= default]`)
 /// and the property declarations are removed by the caller.
+#[cfg(test)]
 fn build_promoted_constructor(props: &[QualifyingProperty], indent: &str) -> String {
+    build_promoted_constructor_for_version(props, indent, PhpVersion::default())
+}
+
+fn promoted_hint_available(hint: &PhpType, version: PhpVersion) -> bool {
+    fn contains_callable(hint: &PhpType) -> bool {
+        match hint.kind() {
+            TypeKind::Named(name) => name.as_str() == "callable",
+            TypeKind::Nullable(inner) => contains_callable(inner),
+            TypeKind::Union(members) => members.iter().any(contains_callable),
+            _ => false,
+        }
+    }
+    version.supports_parameter_hint(hint) && !contains_callable(hint)
+}
+
+fn build_promoted_constructor_for_version(
+    props: &[QualifyingProperty],
+    indent: &str,
+    version: PhpVersion,
+) -> String {
     let mut result = String::new();
 
     result.push('\n');
+    let tags: Vec<_> = props
+        .iter()
+        .filter_map(|prop| {
+            prop.type_hint
+                .as_ref()
+                .filter(|hint| !promoted_hint_available(hint, version))
+                .map(|hint| format!("@param {hint} ${}", prop.name))
+        })
+        .collect();
+    if !tags.is_empty() {
+        result.push_str(&super::render_docblock(indent, &tags, "\n"));
+    }
     result.push_str(indent);
     result.push_str("public function __construct(\n");
 
@@ -483,7 +493,9 @@ fn build_promoted_constructor(props: &[QualifyingProperty], indent: &str) -> Str
         if prop.is_readonly {
             param.push_str(" readonly");
         }
-        if let Some(ref hint) = prop.type_hint {
+        if let Some(ref hint) = prop.type_hint
+            && promoted_hint_available(hint, version)
+        {
             param.push(' ');
             param.push_str(&hint.to_string());
         }

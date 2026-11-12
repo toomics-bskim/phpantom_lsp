@@ -98,9 +98,8 @@ hint; it is not evidence of support for the later primitive type.
 
 Each numbered item is one implementation task and one PR. LP13, LP15–LP17
 address the remaining semantic and inference gaps. LP20 covers constructor
-access and explicit calls.
-LP19 covers the remaining edit producers; LP18 qualifies the final support
-claim. Dependencies below are explicit;
+access and explicit calls. LP18 qualifies the final support claim.
+Dependencies below are explicit;
 items can move into scheduled sprints without changing their scope.
 
 Reproduced defects should receive GitHub issues with the audit sample
@@ -180,28 +179,6 @@ packs instead of hardcoding the sample's string values.
 diagnostics; PHP 5.5 still reports the unavailable syntax.
 Ordinary calls and modern unpacking keep their behavior.
 
-## LP19. Remaining generated edits respect the target language
-
-**Impact: High · Complexity: Medium-High**
-
-**Plan.** Audit edit producers outside constructor/accessor/property-hook
-generation: constructor-parameter promotion, type insertion, method
-implementation, extraction, import rewrites, and completion snippets.
-Share the language capability checks rather than duplicating version
-comparisons. Preserve PHPDoc when a type cannot be written natively.
-Check constructor PHPDoc pseudo-types such as `resource`: treating every
-simple documented name as a native hint can turn a resource contract into
-a class constraint. Add a runtime reproducer before choosing the fix,
-and distinguish documented pseudo-types from native class hints.
-Define behavior for source that already uses syntax newer than its target;
-these edits are not a whole-file transpiler.
-
-**Done when.** Apply each offered edit to version-valid fixtures and lint
-the result under both PHP 5 runtimes, with modern boundary controls.
-Runtime checks cover edits that can change evaluation order or coercion.
-Unavailable transformations are not offered, and supported edits preserve
-their meaning. Record a reproducer for every additional failure found.
-
 ## LP20. Constructor access and explicit calls follow legacy rules
 
 **Impact: High · Complexity: Medium-High**
@@ -278,7 +255,7 @@ stale types for unknown mutations.
 
 ## LP18. Qualify and document the support contract
 
-**Impact: High · Complexity: Medium · Depends on: LP13, LP15–LP17, LP19–LP22**
+**Impact: High · Complexity: Medium · Depends on: LP13, LP15–LP17, LP20–LP22**
 
 **Plan.** Expand the regression matrix to remaining language and LSP
 surfaces before claiming full support: include/require and manual

@@ -228,6 +228,36 @@ embedded symbol indexes; they are not heap-byte estimates. The snapshot
 is a smoke measurement, not a release benchmark or a comparison with an
 earlier build. Index counts alone do not establish complete PHP compatibility.
 
+## Generated edits
+
+[`generated_edits.rs`](generated_edits.rs) applies code actions and completion
+edits through the LSP handlers before exporting `generated-*.json`. The
+fixtures exercise constructors, method implementations, extraction, return
+contracts, imports, overrides, and PHPUnit scaffolding. LF/CRLF controls
+cover single-file refactorings; PHP 5.5 and 5.6 execute the edited files,
+with modern targets providing syntax-boundary controls. PHPUnit scaffolding
+uses a small stand-in to check its generated method, not a PHPUnit installation.
+
+The resource-constructor reproducer starts with an untyped property documented
+as `resource`. On PHP 5.5.38 and 5.6.40, adding `resource $stream` to the
+constructor rejects the stream as a non-object, even though lint succeeds.
+The applied edit therefore retains `@param resource` and accepts the same
+stream at runtime; a real `DateTime` class constraint remains native.
+The modern promotion control also reproduces PHP 8.5.10 rejecting a
+`public callable $callback` promoted property. The generated constructor
+retains the documented callable and invokes the same callback successfully.
+Other regression fixtures reproduce newer syntax previously emitted by
+extraction, method generation, return-type insertion, and function imports.
+The create-test unit controls also cover strict types and attributes.
+
+Generated declarations follow the configured target and retain types in
+PHPDoc when native syntax cannot express them. Transformations that inherently
+require a newer version, such as constructor promotion and null coalescing,
+are unavailable on older targets. An existing newer declaration, default
+expression, or selected function body is not transpiled: copied source can
+still require its original PHP version. These checks qualify edits on
+version-valid input, not automatic conversion of a modern project to PHP 5.
+
 ## Known gaps and extending coverage
 
 `destructuring.json` checks the shared `list()`/`foreach` binder against

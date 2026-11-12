@@ -7,6 +7,8 @@ use crate::php_type::TypeKind;
 
 /// Information gathered for code generation.
 pub(crate) struct ExtractionInfo {
+    /// Language version of the generated declaration and call.
+    pub(crate) version: crate::types::PhpVersion,
     /// The name of the new function/method.
     pub(crate) name: String,
     /// Parameters: `(var_name_with_dollar, cleaned_type_hint)`.
@@ -73,7 +75,7 @@ pub(crate) fn build_docblock_for_extraction(
             continue;
         }
         // Prefer the raw resolved type when it carries concrete generics.
-        if raw.has_type_structure() {
+        if raw.has_type_structure() || (!has_native_hint && !raw.is_empty()) {
             tags.push(format!("@param {} {}", shorten(raw), name));
             continue;
         }
@@ -90,7 +92,9 @@ pub(crate) fn build_docblock_for_extraction(
 
     // Collect @return tag if the return type needs enrichment.
     if !return_type_hint.is_empty() || !raw_return_type.is_empty() {
-        if raw_return_type.has_type_structure() {
+        if raw_return_type.has_type_structure()
+            || (return_type_hint.is_empty() && !raw_return_type.is_empty())
+        {
             tags.push(format!("@return {}", shorten(raw_return_type)));
         } else {
             let hint = if return_type_hint.is_empty() {
@@ -156,7 +160,7 @@ pub(crate) fn build_extracted_definition(info: &ExtractionInfo) -> String {
         out.push_str(&info.docblock);
     }
 
-    let param_list = build_param_list(&info.params);
+    let param_list = build_param_list_for_version(&info.params, info.version);
     let return_type = build_return_type(info);
 
     out.push_str(&info.member_indent);
@@ -171,7 +175,11 @@ pub(crate) fn build_extracted_definition(info: &ExtractionInfo) -> String {
     out.push('(');
     out.push_str(&param_list);
     out.push(')');
-    if !return_type.is_empty() {
+    if !return_type.is_empty()
+        && info
+            .version
+            .supports_return_hint(&PhpType::parse(&return_type))
+    {
         out.push_str(": ");
         out.push_str(&return_type);
     }
@@ -341,11 +349,23 @@ pub(crate) fn rewrite_guard_returns(
 }
 
 /// Build the parameter list string for the function signature.
+#[cfg(test)]
 pub(crate) fn build_param_list(params: &[(String, PhpType)]) -> String {
+    build_param_list_for_version(params, crate::types::PhpVersion::default())
+}
+
+fn build_param_list_for_version(
+    params: &[(String, PhpType)],
+    version: crate::types::PhpVersion,
+) -> String {
     params
         .iter()
         .map(|(name, type_hint)| {
-            let hint_str = type_hint.to_native_hint().unwrap_or_default();
+            let hint_str = type_hint
+                .to_native_hint_typed()
+                .filter(|ty| version.supports_parameter_hint(ty))
+                .map(|ty| ty.to_string())
+                .unwrap_or_default();
             if hint_str.is_empty() {
                 name.clone()
             } else {
@@ -522,9 +542,17 @@ pub(crate) fn build_call_site(info: &ExtractionInfo, call_indent: &str) -> Strin
                 // Multiple return values — destructure from array.
                 let vars: Vec<&str> = info.returns.iter().map(|(n, _)| n.as_str()).collect();
                 out.push_str(call_indent);
-                out.push('[');
+                out.push_str(if info.version.supports_short_destructuring() {
+                    "["
+                } else {
+                    "list("
+                });
                 out.push_str(&vars.join(", "));
-                out.push_str("] = ");
+                out.push_str(if info.version.supports_short_destructuring() {
+                    "] = "
+                } else {
+                    ") = "
+                });
                 out.push_str(&call_expr);
                 out.push_str(";\n");
             }

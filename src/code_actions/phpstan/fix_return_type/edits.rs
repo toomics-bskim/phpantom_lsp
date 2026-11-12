@@ -11,6 +11,39 @@ use crate::text_position::{byte_range_to_lsp_range, line_ending};
 use super::inference::InferredReturnType;
 use super::target::TargetFunction;
 
+/// Write a return contract in syntax the target accepts, retaining PHPDoc
+/// when no native hint can express it. Existing newer syntax is left alone.
+pub(super) fn build_target_return_edits(
+    content: &str,
+    target: &TargetFunction,
+    native: &PhpType,
+    effective: Option<&PhpType>,
+    version: crate::types::PhpVersion,
+    adding: bool,
+) -> Option<Vec<TextEdit>> {
+    let full_type = effective.unwrap_or(native).to_string();
+    let native = native
+        .to_native_hint_typed()
+        .filter(|ty| version.supports_return_hint(ty));
+    let mut edits = Vec::new();
+    if let Some(native) = &native {
+        if target.has_return_type() {
+            edits.extend(target.replace_return_type_edit(content, &native.to_string()));
+        } else {
+            edits.push(target.add_return_type_edit(content, &native.to_string()));
+        }
+    }
+    let needs_doc = native.as_ref().is_none_or(|ty| ty.to_string() != full_type);
+    if adding && target.docblock.return_tag().is_some() {
+        // Adding a missing native declaration does not replace an authored tag.
+    } else if native.as_ref().is_some_and(PhpType::is_void) && !adding {
+        edits.extend(target.docblock.remove_return_tag_edit(content));
+    } else {
+        edits.extend(set_return_tag_edit(content, target, &full_type, needs_doc));
+    }
+    (!edits.is_empty()).then_some(edits)
+}
+
 // ── Edit builders ───────────────────────────────────────────────────────────
 
 /// Build a `TextEdit` that fixes `return {expr};` in a void function: the
@@ -160,42 +193,6 @@ pub(super) fn should_use_own_inference(
     !our_effective.equivalent(current_effective)
 }
 
-/// Build edits using pre-split native and effective types from our
-/// own inference (where native is already a valid PHP type hint).
-///
-/// This is the counterpart of [`build_update_return_type_edits`] for
-/// when we trust our own inference rather than the PHPStan tip.  The
-/// difference is that the caller provides the native/effective split
-/// directly (e.g. native=`array`, effective=`list<int>`) instead of
-/// a single type string that gets split via `PhpType::to_native_hint`.
-pub(super) fn build_update_return_type_edits_split(
-    content: &str,
-    target: &TargetFunction,
-    native_type: &PhpType,
-    effective_type: Option<&PhpType>,
-) -> Option<Vec<TextEdit>> {
-    // The effective type is the full type for the @return tag.
-    // If there is no effective type, the native type is used for both
-    // and no docblock is needed.
-    let native_str = native_type.to_string();
-    let full_type = effective_type
-        .map(|e| e.to_string())
-        .unwrap_or_else(|| native_str.clone());
-
-    let mut edits = Vec::new();
-    edits.extend(target.replace_return_type_edit(content, &native_str));
-    // Only create a @return tag when the effective type differs from the
-    // native type.
-    edits.extend(set_return_tag_edit(
-        content,
-        target,
-        &full_type,
-        effective_type.is_some(),
-    ));
-
-    (!edits.is_empty()).then_some(edits)
-}
-
 /// Build a list of `TextEdit`s that update both the native return type
 /// hint and the `@return` docblock tag for a `return.type` diagnostic.
 ///
@@ -207,6 +204,7 @@ pub(super) fn build_update_return_type_edits_split(
 /// `@return` tag, only the native type is changed.
 ///
 /// Returns `None` if there is nothing to change.
+#[cfg(test)]
 pub(super) fn build_update_return_type_edits(
     content: &str,
     target: &TargetFunction,

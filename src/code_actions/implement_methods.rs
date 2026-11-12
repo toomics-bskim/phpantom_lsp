@@ -12,7 +12,10 @@ use tower_lsp_server::gen_lsp_types::*;
 use crate::Backend;
 use crate::atom::Atom;
 use crate::class_lookup::{ResolvedClassLoader, find_class_at_offset};
-use crate::signature_render::{detect_class_indent, format_params, format_return_type};
+use crate::signature_render::{
+    detect_class_indent, format_params_for_version as format_params,
+    format_return_type_for_version as format_return_type,
+};
 use crate::text_position::offset_to_position;
 use crate::types::{ClassInfo, ClassLikeKind, MethodInfo, Visibility};
 
@@ -53,7 +56,12 @@ impl Backend {
 
         let missing = collect_missing_methods(current_class, &class_loader);
 
-        if missing.is_empty() {
+        if missing.is_empty()
+            || (!self.php_version().supports_variadics()
+                && missing
+                    .iter()
+                    .any(|m| m.parameters.iter().any(|p| p.is_variadic)))
+        {
             return;
         }
 
@@ -61,8 +69,14 @@ impl Backend {
         let use_map: HashMap<String, String> = ctx.use_map.clone();
         let file_namespace = ctx.namespace.clone();
 
-        let stub_text =
-            build_method_stubs(&missing, &use_map, &file_namespace, content, current_class);
+        let stub_text = build_method_stubs_for_version(
+            &missing,
+            &use_map,
+            &file_namespace,
+            content,
+            current_class,
+            self.php_version(),
+        );
 
         // Insert position: just before the closing brace of the class.
         // `end_offset` points one byte past the `}`, so `end_offset - 1`
@@ -223,12 +237,31 @@ pub(crate) fn collect_missing_methods(
 ///
 /// Each stub includes visibility, static modifier, parameter list with
 /// type hints and defaults, return type, and an empty body.
+#[cfg(test)]
 fn build_method_stubs(
     methods: &[MethodInfo],
     use_map: &HashMap<String, String>,
     file_namespace: &Option<String>,
     content: &str,
     class: &ClassInfo,
+) -> String {
+    build_method_stubs_for_version(
+        methods,
+        use_map,
+        file_namespace,
+        content,
+        class,
+        crate::types::PhpVersion::default(),
+    )
+}
+
+fn build_method_stubs_for_version(
+    methods: &[MethodInfo],
+    use_map: &HashMap<String, String>,
+    file_namespace: &Option<String>,
+    content: &str,
+    class: &ClassInfo,
+    version: crate::types::PhpVersion,
 ) -> String {
     let indent = detect_class_indent(content, class);
 
@@ -247,9 +280,14 @@ fn build_method_stubs(
 
         let static_kw = if method.is_static { "static " } else { "" };
 
-        let params = format_params(method, use_map, file_namespace);
-        let return_type = format_return_type(method, use_map, file_namespace);
+        let params = format_params(method, use_map, file_namespace, version);
+        let return_type = format_return_type(method, use_map, file_namespace, version);
 
+        let tags =
+            crate::signature_render::omitted_type_tags(method, use_map, file_namespace, version);
+        if !tags.is_empty() {
+            result.push_str(&super::render_docblock(&indent, &tags, "\n"));
+        }
         result.push_str(&indent);
         result.push_str(&format!(
             "{} {}function {}({}){}\n",

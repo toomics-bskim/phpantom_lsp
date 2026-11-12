@@ -629,6 +629,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Code actions
 
+- **Generated code follows the PHP target.** Code actions and completion keep PHP 5.5 and 5.6 syntax valid, preserving unsupported type contracts in PHPDoc. Documented resources remain usable values when generating constructors.
+
 - **Generated constructors and accessors respect the PHP target.** PHP 5.5 and 5.6 keep unsupported type declarations in PHPDoc. Constructor promotion and property hooks are only offered on PHP versions that support them.
 
 - **"Replace with" no longer leaves a stray parenthesis.** Replacing a call to a deprecated function or method now replaces its closing parenthesis too, instead of leaving an extra `)` behind.

@@ -56,8 +56,7 @@ use crate::code_actions::{CodeActionData, deferred_quickfix};
 use crate::php_type::PhpType;
 
 use edits::{
-    build_change_return_type_edits_to, build_strip_return_expr_edit,
-    build_update_return_type_edits, build_update_return_type_edits_split, read_current_return_type,
+    build_change_return_type_edits_to, build_strip_return_expr_edit, read_current_return_type,
     should_use_own_inference,
 };
 use message_parse::{
@@ -271,7 +270,10 @@ impl Backend {
                     ) else {
                         continue;
                     };
-                    if target.has_return_type() || target.body_end.is_none() {
+                    if target.has_return_type()
+                        || target.body_end.is_none()
+                        || (target.anonymous && !self.php_version().supports_return_types())
+                    {
                         continue;
                     }
 
@@ -325,7 +327,14 @@ impl Backend {
             ACTION_KIND_CHANGE_TYPE_TO_ACTUAL => {
                 let actual_type_str = extra.get("actual_type")?.as_str()?;
                 let actual_type = PhpType::parse(actual_type_str);
-                let edits = build_change_return_type_edits_to(content, &target, &actual_type)?;
+                let edits = edits::build_target_return_edits(
+                    content,
+                    &target,
+                    &actual_type,
+                    None,
+                    self.php_version(),
+                    false,
+                )?;
                 Some(crate::code_actions::single_file_edit(doc_uri, edits))
             }
             ACTION_KIND_UPDATE_RETURN_TYPE => {
@@ -342,22 +351,38 @@ impl Backend {
 
                 let edits = if should_use_own_inference(&our, &current) {
                     let inferred = our?;
-                    build_update_return_type_edits_split(
+                    edits::build_target_return_edits(
                         content,
                         &target,
                         &inferred.native,
                         inferred.effective.as_ref(),
+                        self.php_version(),
+                        false,
                     )?
                 } else {
                     // Trust the PHPStan tip.
-                    build_update_return_type_edits(content, &target, &tip_type)?
+                    edits::build_target_return_edits(
+                        content,
+                        &target,
+                        &tip_type,
+                        None,
+                        self.php_version(),
+                        false,
+                    )?
                 };
 
                 Some(crate::code_actions::single_file_edit(doc_uri, edits))
             }
             ACTION_KIND_CHANGE_TYPE => {
                 let void = PhpType::void();
-                let edits = build_change_return_type_edits_to(content, &target, &void)?;
+                let edits = edits::build_target_return_edits(
+                    content,
+                    &target,
+                    &void,
+                    None,
+                    self.php_version(),
+                    false,
+                )?;
                 Some(crate::code_actions::single_file_edit(doc_uri, edits))
             }
             ACTION_KIND_ADD_TYPE => {
@@ -365,22 +390,14 @@ impl Backend {
                 let inferred =
                     self.infer_return_type_at(&data.uri, content, target.start, false)?;
 
-                // Insert `: native_type` after the closing paren.
-                let mut edits =
-                    vec![target.add_return_type_edit(content, &inferred.native.to_string())];
-
-                // When the effective type is richer than the native hint,
-                // add a `@return` docblock tag.  An existing `@return` tag
-                // is left alone: the user wrote it on purpose.
-                if let Some(ref eff_type) = inferred.effective
-                    && target.docblock.return_tag().is_none()
-                {
-                    edits.push(
-                        target
-                            .docblock
-                            .add_return_tag_edit(content, &eff_type.to_string()),
-                    );
-                }
+                let edits = edits::build_target_return_edits(
+                    content,
+                    &target,
+                    &inferred.native,
+                    inferred.effective.as_ref(),
+                    self.php_version(),
+                    true,
+                )?;
 
                 Some(crate::code_actions::single_file_edit(doc_uri, edits))
             }

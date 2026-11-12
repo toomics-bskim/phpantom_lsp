@@ -127,7 +127,12 @@ impl Backend {
             })
             .collect();
 
-        if public_methods.is_empty() {
+        if public_methods.is_empty()
+            || (!self.php_version().supports_variadics()
+                && public_methods
+                    .iter()
+                    .any(|m| m.parameters.iter().any(|p| p.is_variadic)))
+        {
             return None;
         }
 
@@ -147,6 +152,7 @@ impl Backend {
             class_templates: &class_templates,
             indent: &indent,
             class: current_class,
+            version: self.php_version(),
         });
 
         // The new file sits next to the original, named on the URI itself
@@ -205,6 +211,7 @@ struct InterfaceGenParams<'a> {
     class_templates: &'a [String],
     indent: &'a str,
     class: &'a ClassInfo,
+    version: crate::types::PhpVersion,
 }
 
 /// Generate the full PHP source for the interface file.
@@ -217,6 +224,7 @@ fn generate_interface_source(params: &InterfaceGenParams<'_>) -> String {
         class_templates,
         indent,
         class,
+        version,
     } = params;
     let mut src = String::new();
     src.push_str("<?php\n\n");
@@ -254,14 +262,27 @@ fn generate_interface_source(params: &InterfaceGenParams<'_>) -> String {
         }
 
         // Method-level docblock.
-        let method_doc = build_method_docblock(method, use_map, file_namespace, indent);
+        let method_doc = build_method_docblock(method, use_map, file_namespace, indent, *version);
         if !method_doc.is_empty() {
             src.push_str(&method_doc);
         }
 
         let static_kw = if method.is_static { "static " } else { "" };
-        let params = format_interface_params(method, use_map, file_namespace);
-        let return_type = format_interface_return_type(method, use_map, file_namespace);
+        let params = crate::signature_render::format_params_for_version(
+            method,
+            use_map,
+            file_namespace,
+            *version,
+        );
+        let return_type = if method
+            .native_return_type
+            .as_ref()
+            .is_some_and(|ty| version.supports_return_hint(ty))
+        {
+            format_interface_return_type(method, use_map, file_namespace)
+        } else {
+            String::new()
+        };
 
         src.push_str(indent);
         src.push_str(&format!(
@@ -280,6 +301,7 @@ fn build_method_docblock(
     use_map: &HashMap<String, String>,
     file_namespace: &Option<String>,
     indent: &str,
+    version: crate::types::PhpVersion,
 ) -> String {
     let mut lines: Vec<String> = Vec::new();
 
@@ -302,10 +324,9 @@ fn build_method_docblock(
     for param in &method.parameters {
         if let Some(ref hint) = param.type_hint {
             let hint_str = shorten_single_type(&hint.to_string(), use_map, file_namespace);
-            let native_matches = param
-                .native_type_hint
-                .as_ref()
-                .is_some_and(|n| n.to_string() == hint.to_string());
+            let native_matches = param.native_type_hint.as_ref().is_some_and(|n| {
+                version.supports_parameter_hint(n) && n.to_string() == hint.to_string()
+            });
             // Only emit @param if docblock type differs from native type.
             if !native_matches {
                 lines.push(format!("@param {} {}", hint_str, param.name));
@@ -318,7 +339,7 @@ fn build_method_docblock(
         let native_matches = method
             .native_return_type
             .as_ref()
-            .is_some_and(|n| n.to_string() == ret.to_string());
+            .is_some_and(|n| version.supports_return_hint(n) && n.to_string() == ret.to_string());
         if !native_matches {
             let ret_str = shorten_single_type(&ret.to_string(), use_map, file_namespace);
             lines.push(format!("@return {}", ret_str));
@@ -330,45 +351,6 @@ fn build_method_docblock(
     }
 
     render_docblock(indent, &lines, "\n")
-}
-
-/// Format parameter list for interface method signature.
-fn format_interface_params(
-    method: &MethodInfo,
-    use_map: &HashMap<String, String>,
-    file_namespace: &Option<String>,
-) -> String {
-    let mut parts = Vec::new();
-
-    for param in &method.parameters {
-        let mut s = String::new();
-
-        if let Some(ref hint) = param.native_type_hint {
-            let shortened = hint
-                .resolve_names(&|name| shorten_single_type(name, use_map, file_namespace))
-                .to_string();
-            s.push_str(&shortened);
-            s.push(' ');
-        }
-
-        if param.is_reference {
-            s.push('&');
-        }
-        if param.is_variadic {
-            s.push_str("...");
-        }
-
-        s.push_str(&param.name);
-
-        if let Some(ref default) = param.default_value {
-            s.push_str(" = ");
-            s.push_str(default);
-        }
-
-        parts.push(s);
-    }
-
-    parts.join(", ")
 }
 
 /// Format return type for interface method signature.
@@ -473,6 +455,7 @@ mod tests {
             class_templates: &[],
             indent: "    ",
             class: &class,
+            version: crate::types::PhpVersion::default(),
         });
 
         assert!(src.contains("namespace App\\Models;"));
