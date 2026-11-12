@@ -150,7 +150,21 @@ impl MemberTargetResolver<'_> {
         kind: OccurrenceKind,
         docblock_ref: DocblockMemberRef,
     ) -> Option<String> {
-        let owner = resolve_member_owner(
+        let mut targets =
+            self.resolve_all(subject, is_static, offset, member_name, kind, docblock_ref);
+        (targets.len() == 1).then(|| targets.swap_remove(0))
+    }
+
+    pub(super) fn resolve_all(
+        &mut self,
+        subject: &str,
+        is_static: bool,
+        offset: u32,
+        member_name: &str,
+        kind: OccurrenceKind,
+        docblock_ref: DocblockMemberRef,
+    ) -> Vec<String> {
+        let owners = resolve_member_owners(
             self.backend,
             self.context,
             self.source,
@@ -158,37 +172,52 @@ impl MemberTargetResolver<'_> {
             is_static,
             offset,
             docblock_ref,
-        )?;
-        let key = (owner.clone(), member_name.to_string(), kind);
-        let declaring_owner = self
+        );
+        let mut targets: Vec<_> = owners
+            .iter()
+            .filter_map(|owner| self.resolve_owner(owner, member_name, kind))
+            .collect();
+        targets.sort_unstable();
+        targets.dedup();
+        targets
+    }
+
+    fn resolve_owner(
+        &mut self,
+        owner: &str,
+        member_name: &str,
+        kind: OccurrenceKind,
+    ) -> Option<String> {
+        let key = (owner.to_owned(), member_name.to_string(), kind);
+        let target = self
             .memo
             .entry(key)
             .or_insert_with(|| {
-                resolve_declaring_member_owner(
+                resolve_declaring_member_symbol(
                     self.backend,
                     self.context,
-                    &owner,
+                    owner,
                     member_name,
                     kind,
                 )
             })
             .clone();
-        if let Some(declaring_owner) = declaring_owner {
-            return Some(format!("{declaring_owner}::{member_name}"));
+        if target.is_some() {
+            return target;
         }
 
         let loader = self.backend.resolved_class_loader(self.context);
-        let class = loader(Fqn::new(&owner))?;
+        let class = loader(Fqn::new(owner))?;
         let resolved = crate::virtual_members::resolve_class_fully_maybe_cached(
             &class,
             &loader,
             Some(&self.backend.resolved_class_cache),
         );
-        member_exists(&resolved, member_name, kind).then(|| format!("{owner}::{member_name}"))
+        member_symbol(&resolved, member_name, kind)
     }
 }
 
-fn resolve_member_owner(
+fn resolve_member_owners(
     backend: &Backend,
     context: &FileContext,
     source: &str,
@@ -196,7 +225,7 @@ fn resolve_member_owner(
     is_static: bool,
     offset: u32,
     docblock_ref: DocblockMemberRef,
-) -> Option<String> {
+) -> Vec<String> {
     let use_map = context.use_map_at(offset);
     let namespace = context.namespace_at(offset);
     let class_loader = backend.resolved_class_loader_with(&context.classes);
@@ -217,20 +246,21 @@ fn resolve_member_owner(
         backend: Some(backend),
         function_loader: &function_loader,
     };
-    let resolved = crate::type_engine::subject_resolution::resolve_subject_type(
+    let Some(resolved) = crate::type_engine::subject_resolution::resolve_subject_type(
         subject,
         is_static,
         offset,
         &resolution_context,
-    )?;
+    ) else {
+        return Vec::new();
+    };
     if docblock_ref == DocblockMemberRef::EntityField {
-        let mut names = crate::doctrine::managed_entity_names(
+        return crate::doctrine::managed_entity_names(
             &resolved,
             &context.classes,
             &class_loader,
             &backend.resolved_class_cache,
         );
-        return (names.len() == 1).then(|| names.swap_remove(0));
     }
     let mut names: Vec<String> = resolved
         .top_level_class_names()
@@ -249,7 +279,7 @@ fn resolve_member_owner(
     if docblock_ref == (DocblockMemberRef::YiiProperty { form_model: true }) {
         names = crate::yii::forms::form_model_class_names(names, &class_loader);
     }
-    (names.len() == 1).then(|| names.swap_remove(0))
+    names
 }
 
 /// The class that actually declares `member_name`, so an occurrence on a
@@ -258,7 +288,7 @@ fn resolve_member_owner(
 /// The walk is the shared one every other feature uses, so the precedence
 /// it applies (own members, then traits, then the parent chain, then
 /// interfaces) stays in step with go-to-definition and hover.
-fn resolve_declaring_member_owner(
+fn resolve_declaring_member_symbol(
     backend: &Backend,
     context: &FileContext,
     owner: &str,
@@ -268,28 +298,43 @@ fn resolve_declaring_member_owner(
     let class_loader = backend.resolved_class_loader(context);
     let class = class_loader(Fqn::new(owner))?;
     let declares = |candidate: &ClassInfo| member_exists(candidate, member_name, kind);
-    if declares(&class) {
-        return Some(class.fqn().to_string());
+    if let Some(symbol) = member_symbol(&class, member_name, kind) {
+        return Some(symbol);
     }
     find_declaring_ancestor(&class, &class_loader, &declares)
-        .map(|(_, declaring)| declaring.fqn().to_string())
+        .and_then(|(_, declaring)| member_symbol(&declaring, member_name, kind))
 }
 
 fn member_exists(class: &ClassInfo, member_name: &str, kind: OccurrenceKind) -> bool {
+    declared_member_name(class, member_name, kind).is_some()
+}
+
+fn member_symbol(class: &ClassInfo, member_name: &str, kind: OccurrenceKind) -> Option<String> {
+    declared_member_name(class, member_name, kind).map(|name| format!("{}::{name}", class.fqn()))
+}
+
+fn declared_member_name<'a>(
+    class: &'a ClassInfo,
+    member_name: &str,
+    kind: OccurrenceKind,
+) -> Option<&'a str> {
     match kind {
         OccurrenceKind::Method => class
             .methods
             .iter()
-            .any(|member| member.name.eq_ignore_ascii_case(member_name)),
+            .find(|member| member.name.eq_ignore_ascii_case(member_name))
+            .map(|member| member.name.as_str()),
         OccurrenceKind::Property => class
             .properties
             .iter()
-            .any(|member| member.name.as_str() == member_name),
+            .find(|member| member.name.as_str() == member_name)
+            .map(|member| member.name.as_str()),
         OccurrenceKind::Constant => class
             .constants
             .iter()
-            .any(|member| member.name.as_str() == member_name),
-        _ => false,
+            .find(|member| member.name.as_str() == member_name)
+            .map(|member| member.name.as_str()),
+        _ => None,
     }
 }
 

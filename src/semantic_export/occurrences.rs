@@ -14,12 +14,12 @@ use super::calls::{
 use super::ranges::{enclosing_class, function_fqn, self_reference_name};
 use super::{
     ByteRange, ExportDiagnostic, ExportDiagnosticKind, ExportOccurrence, MemberTargetMemo,
-    OccurrenceKind, SourceDocument,
+    OccurrenceKind,
 };
 
 pub(super) struct SpanExportContext<'a> {
     pub(super) backend: &'a Backend,
-    pub(super) source: &'a SourceDocument,
+    pub(super) source: &'a str,
     /// The document text paired with the map the spans came from, so a
     /// range-backed member subject slices the revision it indexes.
     pub(super) mapped_source: MappedSource<'a>,
@@ -176,15 +176,15 @@ pub(super) fn export_span(
             ) {
                 OccurrenceKind::Property
             } else {
-                member_occurrence_kind(&source.source, range, *is_static, *is_method_call)
+                member_occurrence_kind(source, range, *is_static, *is_method_call)
             };
-            let target = MemberTargetResolver {
+            let targets = MemberTargetResolver {
                 backend,
                 context,
-                source: &source.source,
+                source,
                 memo: &mut output.member_targets,
             }
-            .resolve(
+            .resolve_all(
                 subject,
                 *is_static,
                 span.start,
@@ -198,7 +198,7 @@ pub(super) fn export_span(
             // repository, or a name passed to the `get()` of something
             // other than a record, or a field helper's string given
             // something other than a form model.
-            if target.is_none()
+            if targets.is_empty()
                 && matches!(
                     docblock_ref,
                     DocblockMemberRef::MockedMethod
@@ -209,18 +209,26 @@ pub(super) fn export_span(
             {
                 return;
             }
-            output.occurrences.push(ExportOccurrence {
-                kind,
-                range,
-                name: member_name.to_string(),
-                resolved_symbol: target.clone(),
-                is_definition: false,
-            });
-            if target.is_none() && !docblock_ref.tolerates_missing_target() && !is_array_callable {
+            if targets.is_empty() && !docblock_ref.tolerates_missing_target() && !is_array_callable
+            {
                 output.diagnostics.push(ExportDiagnostic {
                     kind: ExportDiagnosticKind::UnresolvedMember,
                     range,
                     message: format!("unresolved member `{member_name}` on `{subject}`"),
+                });
+            }
+            let targets = if targets.is_empty() {
+                vec![None]
+            } else {
+                targets.into_iter().map(Some).collect()
+            };
+            for target in targets {
+                output.occurrences.push(ExportOccurrence {
+                    kind,
+                    range,
+                    name: member_name.to_string(),
+                    resolved_symbol: target,
+                    is_definition: false,
                 });
             }
         }
@@ -250,12 +258,7 @@ pub(super) fn export_span(
             );
             let resolved = loader(name, span.start);
             let symbol = if *is_definition {
-                Some(declared_constant_symbol(
-                    &source.source,
-                    context,
-                    range,
-                    name,
-                ))
+                Some(declared_constant_symbol(source, context, range, name))
             } else {
                 resolved
                     .as_ref()
@@ -288,7 +291,10 @@ pub(super) fn export_span(
         SymbolKind::SelfStaticParent(keyword) => {
             let class = enclosing_class(&context.classes, span.start);
             let symbol = class.and_then(|class| match keyword {
-                SelfStaticParentKind::Parent => class.parent_class.map(|name| name.to_string()),
+                SelfStaticParentKind::Parent => class.parent_class.and_then(|name| {
+                    backend.resolved_class_loader(context)(crate::Fqn::new(name.as_str()))
+                        .map(|parent| parent.fqn().to_string())
+                }),
                 _ => Some(class.fqn().to_string()),
             });
             output.occurrences.push(ExportOccurrence {

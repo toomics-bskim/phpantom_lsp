@@ -64,6 +64,55 @@ Pin an exact version if you depend on it.
 cargo build --features semantic-export,offline-stubs
 ```
 
+### Comparing reference resolution
+
+A build with `semantic-export` also accepts `analyze --dump-resolutions FILE`.
+It writes the targets of class references, function calls, and member accesses
+from the same workspace index used for diagnostics. This follows the project's
+PHP version, Composer dependencies, indexing configuration, and positional path
+filters. Normal diagnostic output and its exit status are unchanged; a dump
+read/write failure exits with status 2 and leaves any previous snapshot intact.
+
+Build each revision with this feature and run both binaries on the **same
+source tree and dependencies**, with the same configuration and path filters:
+
+```bash
+phpantom-before analyze --project-root /path/to/project --format json --dump-resolutions before.jsonl > before-diagnostics.json
+phpantom-after analyze --project-root /path/to/project --format json --dump-resolutions after.jsonl > after-diagnostics.json
+node scripts/compare-resolutions.mjs before.jsonl after.jsonl
+node scripts/compare-resolutions.mjs before.jsonl after.jsonl --json > changes.json
+```
+
+`analyze` exits with status 1 when diagnostics exist, so collect both runs even
+when the project is not clean. The comparison reports lost, changed, and gained
+target sets, added/removed references, and the share of references and member
+accesses with at least one target. Its exit codes are 0 for unchanged or gained
+targets, 1 for lost/changed targets or removed references, and 2 for invalid input.
+A changed target can be a correction; review it rather than treating every
+change as a failure of the type engine. Added/removed references can also mean
+the inputs differ. Compare unchanged sources to isolate resolver changes.
+
+Each UTF-8 JSON line has schema `version: 1`, a project-relative `path` using
+`/`, half-open UTF-8 byte offsets `start`/`end`, a one-based `line`, a zero-based
+UTF-16 `column`, the reference `kind` and `name`, and sorted, distinct `targets`.
+An unresolved reference has an empty target array; a union can have several
+targets. Member targets use `Namespace\\Class::member` and identify the declaring
+class. Template positions refer to the original template, excluding generated
+prologues. Records are sorted by path, range, kind, and name. Explicit input
+paths outside the project root retain their absolute paths, so use the same
+external paths in both runs. The dump covers selected user files; dependencies
+still participate in resolution. A file with no references contributes no rows.
+
+Keep the diagnostic JSON and coverage report together for real-project checks.
+The initial [reference-resolution baseline](compatibility/resolution-baseline.json)
+records source revisions, installed dependencies, diagnostic counts, and coverage
+for PSR Log, FastRoute, and Monolog.
+Coverage counts named occurrences in the symbol map, rather than runtime
+invocations of arbitrary callable values.
+Revisions predating the dump option need an initial baseline from a build that
+includes it. The comparison tool requires Node.js and no npm packages; its tests
+run with `node --test scripts/compare-resolutions.test.mjs`.
+
 ### Matching the released binary
 
 The Linux binaries we publish are static musl builds using mimalloc as

@@ -29,6 +29,13 @@ pub async fn run(options: AnalyseOptions) -> i32 {
     let Some(OpenedProject { backend, files }) =
         open_project(root, cfg, &options.path_filters).await
     else {
+        #[cfg(feature = "semantic-export")]
+        if let Some(path) = &options.resolution_dump
+            && let Err(error) = super::resolutions::write_dump(path, None, root, &[], &[])
+        {
+            eprintln!("Error writing resolution dump: {error}");
+            return 2;
+        }
         return 0;
     };
 
@@ -49,6 +56,15 @@ pub async fn run(options: AnalyseOptions) -> i32 {
         eprint!("\r\x1b[2K {}", progress_bar(0, file_count, ""));
     }
     let indexed = index_project(&backend, root, &files, debug && verbosity >= 2);
+
+    #[cfg(feature = "semantic-export")]
+    if let Some(path) = &options.resolution_dump
+        && let Err(error) =
+            super::resolutions::write_dump(path, Some(&backend), root, &files, &indexed.file_data)
+    {
+        eprintln!("Error writing resolution dump: {error}");
+        return 2;
+    }
 
     let diagnose_t0 = Instant::now();
     let mut all_file_diagnostics = collect_diagnostics(DiagnosticPass {

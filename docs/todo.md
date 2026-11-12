@@ -40,7 +40,6 @@ contributor even though it's short.
 | #   | Item                                                                                                                                                            | Impact      | Complexity  |
 | --- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ----------- |
 |     | Clear [refactoring gate](todo/refactor.md)                                                                                                                      | —           | —           |
-| T61 | [A regression that changes where a call resolves goes unnoticed](todo/type-inference.md#t61-a-regression-that-changes-where-a-call-resolves-goes-unnoticed) | Medium      | Medium      |
 | P96 | [Reuse compatible Drupal discovery results in the full index](todo/performance.md#p96-reuse-compatible-drupal-discovery-results-in-the-full-index) | Low-Medium | Medium |
 | P91 | [Parsing and merging of the full index take turns](todo/performance.md#p91-parsing-and-merging-of-the-full-index-take-turns) | Medium-High | Medium-High |
 |     | **Release 1.1.0**                                                                                                                                               |             |             |
@@ -223,7 +222,6 @@ source syntax, runtime semantics, built-ins, and editor behavior.
 | T62 | [A sealed hierarchy is not narrowed by ruling out its other members](todo/type-inference.md#t62-a-sealed-hierarchy-is-not-narrowed-by-ruling-out-its-other-members) | Medium      | Medium      |
 | T49 | [A closure passed to a constructor gets no parameter types from it](todo/type-inference.md#t49-a-closure-passed-to-a-constructor-gets-no-parameter-types-from-it) | Medium      | Medium      |
 | T59 | [`T[K]` on a class template is not resolved](todo/type-inference.md#t59-tk-on-a-class-template-is-not-resolved) | Medium      | Medium      |
-| T61 | [A regression that changes where a call resolves goes unnoticed](todo/type-inference.md#t61-a-regression-that-changes-where-a-call-resolves-goes-unnoticed) | Medium      | Medium      |
 | C13 | [`self::`/`static::` inside a `@require-extends` trait does not see the required class's static members](todo/completion.md#c13-selfstatic-inside-a-require-extends-trait-does-not-see-the-required-classs-static-members) | Low-Medium  | Medium      |
 | D23 | [A rebound closure's scope is added to the lexical one rather than replacing it](todo/diagnostics.md#d23-a-rebound-closures-scope-is-added-to-the-lexical-one-rather-than-replacing-it) | Low-Medium  | Medium      |
 | T43 | [`self::TypeAlias` inside `@extends`'s generic argument is not resolved](todo/type-inference.md#t43-selftypealias-inside-extendss-generic-argument-is-not-resolved) | Low         | Medium      |

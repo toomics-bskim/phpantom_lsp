@@ -727,6 +727,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Internal
 
+- **Reference resolution comparisons.** Builds with `semantic-export` can save an `analyze --dump-resolutions` snapshot and compare declaration targets and resolution coverage across revisions.
 - **Background analysis tracing.** Optional debug and trace logs identify files and analysis stages that keep the server busy after indexing.
 - **PHP target compatibility checks.** Portable regression fixtures compare legacy and modern targets, with optional pinned PHP 5.5 and 5.6 runtime checks for generated edits and formatting.
 - **Tempest performance checks.** CI measures template editing, completion, navigation, and memory use against the Tempest playground. Contributed by @shuvroroy.

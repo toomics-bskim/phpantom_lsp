@@ -8,6 +8,9 @@ mod calls;
 mod declarations;
 mod occurrences;
 mod ranges;
+mod resolutions;
+
+pub(crate) use resolutions::reference_occurrences;
 
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -342,7 +345,7 @@ fn export_document(backend: &Backend, source: &SourceDocument) -> ExportDocument
             });
         let export_context = SpanExportContext {
             backend,
-            source,
+            source: &source.source,
             mapped_source,
             file_context: &context,
             variable_definitions: &map.var_defs,

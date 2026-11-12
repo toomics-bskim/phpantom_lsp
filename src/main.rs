@@ -76,6 +76,11 @@ enum Command {
         #[arg(long = "exclude-code", value_name = "CODE")]
         exclude_codes: Vec<String>,
 
+        /// Write resolved reference targets as JSON Lines (requires semantic-export).
+        #[cfg(feature = "semantic-export")]
+        #[arg(long, value_name = "FILE")]
+        dump_resolutions: Option<std::path::PathBuf>,
+
         #[command(flatten)]
         project: ProjectArgs,
 
@@ -415,6 +420,8 @@ async fn async_main() {
             severity,
             codes,
             exclude_codes,
+            #[cfg(feature = "semantic-export")]
+            dump_resolutions,
             project,
             debug,
             verbose,
@@ -426,6 +433,8 @@ async fn async_main() {
             } = project.resolve();
 
             let options = phpantom_lsp::analyse::AnalyseOptions {
+                #[cfg(feature = "semantic-export")]
+                resolution_dump: dump_resolutions,
                 workspace_root,
                 path_filters: paths
                     .into_iter()

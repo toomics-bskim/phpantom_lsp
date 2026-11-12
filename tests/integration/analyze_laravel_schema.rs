@@ -56,6 +56,8 @@ async fn analyse_consumer(consumer: &str) -> i32 {
     );
 
     phpantom_lsp::analyse::run(phpantom_lsp::analyse::AnalyseOptions {
+        #[cfg(feature = "semantic-export")]
+        resolution_dump: None,
         workspace_root: dir.path().to_path_buf(),
         path_filters: vec![dir.path().join("src/Consumer.php")],
         severity_filter: phpantom_lsp::analyse::SeverityFilter::All,

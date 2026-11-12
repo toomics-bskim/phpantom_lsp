@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-12",
+  "build": "Rust 1.99.1, Linux x86_64, debug, semantic-export enabled",
+  "scope": "Named reference occurrences in src; diagnostics include all severities. PHP targets inferred from composer.json. No development dependencies installed.",
+  "comparison": "Initial baselines: each project was analyzed normally and twice with dumps. This verifies deterministic output and diagnostic parity, not a comparison against a revision predating the dump option.",
+  "projects": [
+    {
+      "name": "psr/log",
+      "repository": "https://github.com/php-fig/log.git",
+      "revision": "f16e1d5863e37f8d8c2a01719f5b34baa2b714d3",
+      "paths": [
+        "src"
+      ],
+      "phpConstraint": ">=8.0.0",
+      "dependencies": [],
+      "coverage": {
+        "all": {
+          "resolved": 63,
+          "total": 63,
+          "percent": 100
+        },
+        "members": {
+          "resolved": 17,
+          "total": 17,
+          "percent": 100
+        }
+      },
+      "diagnostics": 0,
+      "repeatedDumpsIdentical": true,
+      "diagnosticsUnchangedWithDump": true
+    },
+    {
+      "name": "nikic/fast-route",
+      "repository": "https://github.com/nikic/FastRoute.git",
+      "revision": "1c961398bef1ff6ecd8b273bef651d7afe90312b",
+      "paths": [
+        "src"
+      ],
+      "phpConstraint": ">=8.1.0",
+      "dependencies": [
+        {
+          "name": "psr/http-message",
+          "version": "2.0",
+          "reference": "402d35bcb92c70c026d1a6a9883f06b2ead23d71"
+        },
+        {
+          "name": "psr/simple-cache",
+          "version": "3.0.0",
+          "reference": "764e0b3939f5ca87cb904f570ef9be2d78a07865"
+        }
+      ],
+      "coverage": {
+        "all": {
+          "resolved": 786,
+          "total": 847,
+          "percent": 92.79811097992916
+        },
+        "members": {
+          "resolved": 202,
+          "total": 206,
+          "percent": 98.05825242718447
+        }
+      },
+      "diagnostics": 20,
+      "repeatedDumpsIdentical": true,
+      "diagnosticsUnchangedWithDump": true
+    },
+    {
+      "name": "monolog/monolog",
+      "repository": "https://github.com/Seldaek/monolog.git",
+      "revision": "3bed304b1905fed5c30d172872f4d890cbb03c6a",
+      "paths": [
+        "src"
+      ],
+      "phpConstraint": ">=8.1",
+      "dependencies": [
+        {
+          "name": "psr/log",
+          "version": "3.0.2",
+          "reference": "f16e1d5863e37f8d8c2a01719f5b34baa2b714d3"
+        }
+      ],
+      "coverage": {
+        "all": {
+          "resolved": 7553,
+          "total": 7822,
+          "percent": 96.56098184607518
+        },
+        "members": {
+          "resolved": 2662,
+          "total": 2764,
+          "percent": 96.30969609261939
+        }
+      },
+      "diagnostics": 202,
+      "repeatedDumpsIdentical": true,
+      "diagnosticsUnchangedWithDump": true
+    }
+  ]
+}

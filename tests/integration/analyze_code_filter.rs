@@ -24,6 +24,8 @@ async fn exit_code(only: &[&str], excluded: &[&str], severity: SeverityFilter) -
     let owned = |codes: &[&str]| codes.iter().map(ToString::to_string).collect();
     let dir = project();
     run(AnalyseOptions {
+        #[cfg(feature = "semantic-export")]
+        resolution_dump: None,
         workspace_root: dir.path().to_path_buf(),
         path_filters: Vec::new(),
         severity_filter: severity,

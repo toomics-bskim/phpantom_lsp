@@ -241,6 +241,8 @@ async fn builtin_availability_cli_uses_the_same_hash_equals_boundary() {
         .unwrap();
         assert_eq!(
             run(AnalyseOptions {
+                #[cfg(feature = "semantic-export")]
+                resolution_dump: None,
                 workspace_root: root.clone(),
                 path_filters: vec![],
                 severity_filter: SeverityFilter::All,

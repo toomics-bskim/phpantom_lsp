@@ -53,6 +53,8 @@ fn polyglot_workspace(call: &str) -> tempfile::TempDir {
 
 async fn analyze(root: &Path) -> i32 {
     phpantom_lsp::analyse::run(phpantom_lsp::analyse::AnalyseOptions {
+        #[cfg(feature = "semantic-export")]
+        resolution_dump: None,
         workspace_root: root.to_path_buf(),
         path_filters: Vec::new(),
         severity_filter: phpantom_lsp::analyse::SeverityFilter::All,

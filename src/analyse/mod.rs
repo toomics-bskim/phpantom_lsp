@@ -52,6 +52,8 @@ use tower_lsp_server::gen_lsp_types::DiagnosticSeverity;
 mod diagnose;
 mod output;
 mod project;
+#[cfg(feature = "semantic-export")]
+mod resolutions;
 mod run;
 mod stages;
 
@@ -143,6 +145,10 @@ pub enum OutputFormat {
 /// Options for the analyse command.
 #[derive(Debug)]
 pub struct AnalyseOptions {
+    /// Optional JSON Lines destination for reference targets and resolution coverage.
+    /// Relative paths are interpreted against the process working directory.
+    #[cfg(feature = "semantic-export")]
+    pub resolution_dump: Option<PathBuf>,
     /// Workspace root.  Usually a Composer project directory; a plain
     /// PHP tree without a composer.json is analysed by walking the
     /// root.
